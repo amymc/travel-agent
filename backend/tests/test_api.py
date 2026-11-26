@@ -1,21 +1,47 @@
 from fastapi.testclient import TestClient
 
-from app.api.routes_trips import get_llm_client
-from app.domain.models import DayPlan, ItineraryDraft, ItineraryItem, TripRequest
+from app.agent.loop import AgentRunResult
+from app.api.routes_trips import get_agent_loop, get_llm_client
+from app.domain.models import (
+    AgentStepTrace,
+    AgentToolCall,
+    DayPlan,
+    ItineraryDraft,
+    ItineraryItem,
+    TripRequest,
+)
 from app.main import app
 from app.services.llm_client import LLMConfigurationError
 
 
-class FakeLLMClient:
+class FakeAgentLoop:
     def __init__(self, draft: ItineraryDraft) -> None:
         self.draft = draft
 
-    def generate_itinerary(self, request: TripRequest) -> tuple[ItineraryDraft, str]:
-        return self.draft, "gemini-3.8-flash"
+    def run(self, request: TripRequest) -> AgentRunResult:
+        return AgentRunResult(
+            draft=self.draft,
+            model_used="gemini-3.8-flash",
+            trace=[
+                AgentStepTrace(
+                    step=1,
+                    model_used="gemini-3.8-flash",
+                    tool_calls=[
+                        AgentToolCall(
+                            name="search_places",
+                            args={"city": "Lisbon", "category": "attraction"},
+                            result_summary="Found 8 place(s) in Lisbon",
+                        )
+                    ],
+                )
+            ],
+        )
 
 
 class MissingKeyLLMClient:
-    def generate_itinerary(self, request: TripRequest) -> tuple[ItineraryDraft, str]:
+    model = "gemini-3.8-flash"
+
+    def call_with_fallback(self, *, contents, config):
         raise LLMConfigurationError("GEMINI_API_KEY is not configured.")
 
 
@@ -26,7 +52,7 @@ def test_health_endpoint() -> None:
     assert res.json()["status"] == "ok"
 
 
-def test_plan_trip_returns_validated_itinerary() -> None:
+def test_plan_trip_returns_validated_itinerary_and_agent_trace() -> None:
     fake_draft = ItineraryDraft(
         destination="Lisbon",
         title="2 Days in Lisbon",
@@ -78,7 +104,7 @@ def test_plan_trip_returns_validated_itinerary() -> None:
         ],
     )
 
-    app.dependency_overrides[get_llm_client] = lambda: FakeLLMClient(fake_draft)
+    app.dependency_overrides[get_agent_loop] = lambda: FakeAgentLoop(fake_draft)
     try:
         client = TestClient(app)
         res = client.post(
@@ -99,6 +125,8 @@ def test_plan_trip_returns_validated_itinerary() -> None:
         assert body["is_valid"] is True
         assert body["issues"] == []
         assert body["model_used"] == "gemini-3.8-flash"
+        assert len(body["agent_trace"]) == 1
+        assert body["agent_trace"][0]["tool_calls"][0]["name"] == "search_places"
     finally:
         app.dependency_overrides.clear()
 

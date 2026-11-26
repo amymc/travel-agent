@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from typing import Any
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -67,9 +68,14 @@ class GeminiItineraryClient:
         self._client_factory = client_factory or (lambda key: genai.Client(api_key=key))
         self._sleep = sleep_fn
 
-    # builds an ordered, duplicate-free list of model names to try
-    # starting with your primary model, 
-    # followed by the fallback models.
+    def _ensure_configured(self) -> genai.Client:
+        if not self.api_key or self.api_key == "your_google_ai_studio_api_key_here":
+            raise LLMConfigurationError(
+                "GEMINI_API_KEY is not configured. Copy .env.example to .env and add your "
+                "free Google AI Studio API key."
+            )
+        return self._client_factory(self.api_key)
+
     def _candidate_models(self) -> list[str]:
         seen: set[str] = set()
         models: list[str] = []
@@ -80,42 +86,14 @@ class GeminiItineraryClient:
                 models.append(cleaned)
         return models
 
-    def _call_model(
-        self, client: genai.Client, model_name: str, prompt: str
-    ) -> ItineraryDraft:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                response_schema=ItineraryDraft,
-                temperature=0.4,
-            ),
-        )
-
-        if isinstance(response.parsed, ItineraryDraft):
-            return response.parsed
-
-        if response.text:
-            try:
-                return ItineraryDraft.model_validate_json(response.text)
-            except Exception as exc:
-                raise LLMGenerationError(
-                    f"Gemini returned JSON that did not match ItineraryDraft: {exc}"
-                ) from exc
-
-        raise LLMGenerationError("Gemini returned an empty response.")
-
-    def generate_itinerary(self, request: TripRequest) -> tuple[ItineraryDraft, str]:
-        if not self.api_key or self.api_key == "your_google_ai_studio_api_key_here":
-            raise LLMConfigurationError(
-                "GEMINI_API_KEY is not configured. Copy .env.example to .env and add your "
-                "free Google AI Studio API key."
-            )
-
-        client = self._client_factory(self.api_key)
-        prompt = build_trip_prompt(request)
+    def call_with_fallback(
+        self,
+        *,
+        contents: Any,
+        config: types.GenerateContentConfig,
+    ) -> tuple[Any, str]:
+        """Execute generate_content with primary retry and automatic model fallback."""
+        client = self._ensure_configured()
         models = self._candidate_models()
         last_error: Exception | None = None
 
@@ -125,10 +103,12 @@ class GeminiItineraryClient:
 
             for attempt in range(max_attempts):
                 try:
-                    draft = self._call_model(client, model_name, prompt)
-                    return draft, model_name
-                except LLMGenerationError:
-                    raise
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=config,
+                    )
+                    return response, model_name
                 except Exception as exc:
                     last_error = exc
                     if _is_retryable_capacity_error(exc) and attempt + 1 < max_attempts:
@@ -143,3 +123,27 @@ class GeminiItineraryClient:
             f"All configured Gemini models ({tried}) are currently experiencing high demand or "
             f"rate limits. Please try again in a few seconds. Last error: {last_error}"
         ) from last_error
+
+    def generate_itinerary(self, request: TripRequest) -> tuple[ItineraryDraft, str]:
+        """Single-shot structured itinerary generation (used as fallback or direct mode)."""
+        prompt = build_trip_prompt(request)
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=ItineraryDraft,
+            temperature=0.4,
+        )
+        response, model_name = self.call_with_fallback(contents=prompt, config=config)
+
+        if isinstance(response.parsed, ItineraryDraft):
+            return response.parsed, model_name
+
+        if response.text:
+            try:
+                return ItineraryDraft.model_validate_json(response.text), model_name
+            except Exception as exc:
+                raise LLMGenerationError(
+                    f"Gemini returned JSON that did not match ItineraryDraft: {exc}"
+                ) from exc
+
+        raise LLMGenerationError("Gemini returned an empty response.")

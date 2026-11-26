@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 Pace = Literal["relaxed", "moderate", "packed"]
@@ -59,6 +59,23 @@ class ValidationIssue(BaseModel):
     day_number: int | None = None
 
 
+class AgentToolCall(BaseModel):
+    """Record of a single tool invocation made by the agent during planning."""
+
+    name: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    result_summary: str
+
+
+class AgentStepTrace(BaseModel):
+    """Observability trace for one iteration of the agent loop."""
+
+    step: int
+    model_used: str
+    tool_calls: list[AgentToolCall] = Field(default_factory=list)
+    note: str | None = None
+
+
 class ItineraryResponse(BaseModel):
     """API response combining the structured itinerary with deterministic validation."""
 
@@ -68,3 +85,4 @@ class ItineraryResponse(BaseModel):
     is_valid: bool
     issues: list[ValidationIssue]
     model_used: str
+    agent_trace: list[AgentStepTrace] = Field(default_factory=list)

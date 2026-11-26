@@ -48,6 +48,19 @@ export interface ValidationIssue {
   day_number?: number | null;
 }
 
+export interface AgentToolCall {
+  name: string;
+  args: Record<string, unknown>;
+  result_summary: string;
+}
+
+export interface AgentStepTrace {
+  step: number;
+  model_used: string;
+  tool_calls: AgentToolCall[];
+  note?: string | null;
+}
+
 export interface ItineraryResponse {
   itinerary: ItineraryDraft;
   total_estimated_cost: number;
@@ -55,4 +68,5 @@ export interface ItineraryResponse {
   is_valid: boolean;
   issues: ValidationIssue[];
   model_used: string;
+  agent_trace: AgentStepTrace[];
 }

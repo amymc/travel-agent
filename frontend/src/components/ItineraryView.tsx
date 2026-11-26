@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ActivityCategory, ItineraryResponse } from "../types/trip";
+import { AgentTracePanel } from "./AgentTracePanel";
 
 interface ItineraryViewProps {
   data: ItineraryResponse | null;
@@ -30,7 +31,15 @@ export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
     );
   }
 
-  const { itinerary, total_estimated_cost, budget_remaining, is_valid, issues, model_used } = data;
+  const {
+    itinerary,
+    total_estimated_cost,
+    budget_remaining,
+    is_valid,
+    issues,
+    model_used,
+    agent_trace,
+  } = data;
   const budgetRatio = Math.min(100, Math.round((total_estimated_cost / Math.max(1, maxBudget)) * 100));
   const overBudget = budget_remaining < 0;
 
@@ -106,6 +115,9 @@ export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
           </div>
         )}
       </div>
+
+      {/* Agent Execution Trace */}
+      <AgentTracePanel trace={agent_trace} />
 
       {/* Day Filter Tabs */}
       <div className="flex flex-wrap gap-2">

@@ -2,10 +2,10 @@
 
 A learning project for building an AI travel planning application with **React + TypeScript**, **Python (FastAPI + uv)**, and **Google Gemini**.
 
-## Milestone 1: Walking Skeleton
+## Milestone 2: Iterative Agent Tool-Calling Loop
 
-- **Backend (`backend/`):** FastAPI app using `google-genai` structured outputs (`ItineraryDraft` Pydantic schema) paired with a deterministic Python validator (`app/domain/validator.py`) for budget totals, time overlaps, and pace limits.
-- **Frontend (`frontend/`):** Vite + React + TypeScript + Tailwind UI with trip prompt/constraint inputs and a day-by-day itinerary viewer.
+- **Backend (`backend/`):** FastAPI app running an explicit Gemini tool-calling loop (`app/agent/loop.py`) with `search_places`, `get_travel_time`, `validate_draft_itinerary`, and `submit_itinerary` backed by mock datasets for Lisbon, Kyoto, and Barcelona (`app/data/places.json`), plus automatic validation repair and model fallback.
+- **Frontend (`frontend/`):** Vite + React + TypeScript + Tailwind UI with trip prompt/constraint inputs, a day-by-day itinerary viewer, and a collapsible **Agent Tool-Calling Trace** panel.
 
 ## Setup & Running Locally
 

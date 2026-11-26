@@ -36,7 +36,7 @@ export function App() {
               AI Travel Agent
             </h1>
             <p className="text-xs text-slate-500">
-              Milestone 1 — Structured Gemini Planning + Deterministic Python
+              Milestone 2 — Tool-Calling Agent Loop + Deterministic Python
               Validation
             </p>
           </div>

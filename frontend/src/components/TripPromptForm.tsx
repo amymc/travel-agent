@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type SubmitEventHandler } from "react";
 import type { Pace, TripRequest } from "../types/trip";
 
 interface TripPromptFormProps {
@@ -47,7 +47,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
     EXAMPLE_TRIPS[0].interests,
   );
 
-  const handleSubmit = (event: SubmitEvent) => {
+  const handleSubmit: SubmitEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
     const interests = interestsInput
       .split(",")
@@ -167,7 +167,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
           <input
             id="max-budget"
             type="number"
-            min={1}
+            min={10}
             step="10"
             value={maxBudget}
             onChange={(e) =>
@@ -220,7 +220,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
         disabled={isLoading}
         className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 transition"
       >
-        {isLoading ? "Planning itinerary with Gemini..." : "Generate Itinerary"}
+        {isLoading ? "Agent researching & planning..." : "Generate Itinerary"}
       </button>
     </form>
   );

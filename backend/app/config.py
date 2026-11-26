@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     gemini_fallback_models: str = "gemini-3.6-flash,gemini-3.5-flash-lite"
     cors_origins: str = "http://localhost:5173"
+    cache_db_path: str = "data/api_cache.sqlite3"
+    osm_user_agent: str = "AITravelAgent/0.1 (local travel planning app)"
+    nominatim_url: str = "https://nominatim.openstreetmap.org"
+    overpass_url: str = "https://overpass-api.de/api/interpreter"
+    osrm_driving_url: str = "https://router.project-osrm.org"
+    osrm_foot_url: str = "https://routing.openstreetmap.de/routed-foot"
 
     model_config = SettingsConfigDict(
         env_file=(ROOT_ENV, BACKEND_ENV),

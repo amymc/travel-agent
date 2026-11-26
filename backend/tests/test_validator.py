@@ -1,8 +1,15 @@
-from app.domain.models import DayPlan, ItineraryDraft, ItineraryItem, TripRequest
+from app.domain.models import (
+    ActivityCategory,
+    DayPlan,
+    ItineraryDraft,
+    ItineraryItem,
+    JsonValue,
+    TripRequest,
+)
 from app.domain.validator import parse_minutes, validate_itinerary
 
 
-def _make_request(**overrides) -> TripRequest:
+def _make_request(**overrides: JsonValue) -> TripRequest:
     defaults = {
         "prompt": "3 days in Lisbon",
         "num_days": 2,
@@ -20,7 +27,7 @@ def _make_item(
     end: str,
     title: str = "Activity",
     cost: float = 20.0,
-    category: str = "attraction",
+    category: ActivityCategory = "attraction",
 ) -> ItineraryItem:
     return ItineraryItem(
         start_time=start,

@@ -2,9 +2,9 @@
 
 A learning project for building an AI travel planning application with **React + TypeScript**, **Python (FastAPI + uv)**, and **Google Gemini**.
 
-## Milestone 2: Iterative Agent Tool-Calling Loop
+## Milestone 3: External Place Search, Routing, and Cache
 
-- **Backend (`backend/`):** FastAPI app running an explicit Gemini tool-calling loop (`app/agent/loop.py`) with `search_places`, `get_travel_time`, `validate_draft_itinerary`, and `submit_itinerary` backed by mock datasets for Lisbon, Kyoto, and Barcelona (`app/data/places.json`), plus automatic validation repair and model fallback.
+- **Backend (`backend/`):** FastAPI app running an explicit Gemini tool-calling loop (`app/agent/loop.py`) with `search_places`, `get_travel_time`, `validate_draft_itinerary`, and `submit_itinerary`. Place search uses Nominatim geocoding and Overpass OpenStreetMap POIs; walking and driving directions use OSRM. Geocodes, POI searches, and routes are persisted in a local SQLite cache (`backend/data/api_cache.sqlite3`).
 - **Frontend (`frontend/`):** Vite + React + TypeScript + Tailwind UI with trip prompt/constraint inputs, a day-by-day itinerary viewer, and a collapsible **Agent Tool-Calling Trace** panel.
 
 ## Setup & Running Locally
@@ -42,3 +42,9 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. Vite proxies `/api` requests to `http://localhost:8000`.
+
+### External map data
+
+The geocoding, POI, and routing endpoints are configurable with the `NOMINATIM_URL`, `OVERPASS_URL`, `OSRM_DRIVING_URL`, and `OSRM_FOOT_URL` environment variables. They use public OpenStreetMap services and do not require API keys. Requests identify this app with `OSM_USER_AGENT`; keep public-service use modest. The SQLite cache path is configurable with `CACHE_DB_PATH`. Cached results persist across backend restarts. OpenStreetMap data is © OpenStreetMap contributors and available under the ODbL; public services have usage limits and no uptime guarantee.
+
+OSM does not provide dependable admission, meal, hotel, or transit fares. Search results therefore flag pricing as unavailable; taxi and transit fares remain rough estimates. OSRM provides routed walking and driving times; transit duration is estimated from routed distance.

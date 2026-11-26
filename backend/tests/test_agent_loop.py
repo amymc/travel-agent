@@ -2,10 +2,14 @@ from types import SimpleNamespace
 from google.genai import types
 
 from app.agent.loop import TravelAgentLoop
-from app.domain.models import DayPlan, ItineraryDraft, ItineraryItem, TripRequest
+from app.agent import tools as agent_tools
+from app.domain.models import DayPlan, ItineraryDraft, ItineraryItem, JsonValue, TripRequest
 
 
-def _make_response(function_calls: list[tuple[str, dict]] | None = None, text: str | None = None):
+def _make_response(
+    function_calls: list[tuple[str, dict[str, JsonValue]]] | None = None,
+    text: str | None = None,
+) -> SimpleNamespace:
     calls = [SimpleNamespace(name=name, args=args) for name, args in (function_calls or [])]
     parts = [types.Part.from_text(text=text)] if text else []
     content = types.Content(role="model", parts=parts)
@@ -17,7 +21,24 @@ def _make_response(function_calls: list[tuple[str, dict]] | None = None, text: s
     )
 
 
-def test_agent_loop_researches_repairs_budget_and_submits() -> None:
+def test_agent_loop_researches_repairs_budget_and_submits(monkeypatch) -> None:
+    monkeypatch.setattr(
+        agent_tools,
+        "search_places",
+        lambda **_kwargs: {"count": 1, "matches": [{"name": "Seafood Spot"}]},
+    )
+    monkeypatch.setattr(
+        agent_tools,
+        "estimate_travel_time",
+        lambda **_kwargs: {
+            "duration_mins": 24,
+            "distance_km": 6.0,
+            "estimated_cost": None,
+            "currency": None,
+            "mode": "transit",
+            "note": "Transit duration is estimated.",
+        },
+    )
     over_budget_draft = {
         "destination": "Lisbon",
         "title": "Lisbon Trip",

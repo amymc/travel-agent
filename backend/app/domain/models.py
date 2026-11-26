@@ -1,8 +1,9 @@
-from typing import Any, Literal
+from typing import Literal
 from pydantic import BaseModel, Field
 
 Pace = Literal["relaxed", "moderate", "packed"]
 ActivityCategory = Literal["attraction", "restaurant", "transport", "lodging", "free_time"]
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
 
 class TripRequest(BaseModel):
@@ -63,7 +64,7 @@ class AgentToolCall(BaseModel):
     """Record of a single tool invocation made by the agent during planning."""
 
     name: str
-    args: dict[str, Any] = Field(default_factory=dict)
+    args: dict[str, JsonValue] = Field(default_factory=dict)
     result_summary: str
 
 

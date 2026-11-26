@@ -36,8 +36,7 @@ export function App() {
               AI Travel Agent
             </h1>
             <p className="text-xs text-slate-500">
-              Milestone 2 — Tool-Calling Agent Loop + Deterministic Python
-              Validation
+              Milestone 3 — External Place Search, Routing, and Cache Validation
             </p>
           </div>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
@@ -61,6 +60,9 @@ export function App() {
             <ItineraryView data={result} maxBudget={lastBudget} />
           </div>
         </div>
+        <footer className="mt-8 text-center text-xs text-slate-500">
+          Place data © OpenStreetMap contributors · Routing by OSRM
+        </footer>
       </main>
     </div>
   );

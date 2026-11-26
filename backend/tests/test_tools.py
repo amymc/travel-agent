@@ -1,5 +1,11 @@
+import json
+from io import BytesIO
+
 from app.agent.tools import ToolExecutionContext, execute_tool_call
 from app.domain.models import TripRequest
+from app.config import settings
+from app.services import places, routing
+from app.services.cache import set_cached
 from app.services.places import search_places
 from app.services.routing import estimate_travel_time
 
@@ -15,27 +21,136 @@ def _sample_request(max_budget: float = 150.0) -> TripRequest:
     )
 
 
-def test_search_places_filters_by_city_category_and_query() -> None:
-    res = search_places(city="Lisbon", category="restaurant", query="seafood")
-    assert res["count"] >= 2
-    assert all(place["category"] == "restaurant" for place in res["matches"])
+def test_search_places_filters_live_api_results_and_reuses_city_cache(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
+    monkeypatch.setattr(
+        places,
+        "geocode_city",
+        lambda city: {"lat": 41.15, "lng": -8.61, "display_name": city},
+    )
+    api_calls = 0
+
+    def fake_urlopen(_request, timeout):
+        nonlocal api_calls
+        api_calls += 1
+        return BytesIO(
+            json.dumps(
+                {
+                    "elements": [
+                        {
+                            "type": "node",
+                            "id": 100,
+                            "lat": 41.15,
+                            "lon": -8.61,
+                            "tags": {
+                                "name": "Seafood Corner",
+                                "amenity": "restaurant",
+                                "cuisine": "seafood",
+                            },
+                        },
+                        {
+                            "type": "node",
+                            "id": 200,
+                            "lat": 41.16,
+                            "lon": -8.62,
+                            "tags": {"name": "Old Castle", "historic": "castle"},
+                        },
+                    ]
+                }
+            ).encode()
+        )
+
+    monkeypatch.setattr(places, "urlopen", fake_urlopen)
+    restaurant_results = search_places("Porto", category="restaurant", query="seafood")
+    attraction_results = search_places("Porto", category="attraction")
+
+    assert restaurant_results["count"] == 1
+    assert restaurant_results["matches"][0]["name"] == "Seafood Corner"
+    assert restaurant_results["matches"][0]["estimated_cost"] is None
+    assert "note" in restaurant_results
+    assert "prices" in restaurant_results["note"].lower()
+    assert attraction_results["matches"][0]["name"] == "Old Castle"
+    assert api_calls == 1
 
 
-def test_search_places_returns_helpful_note_for_unsupported_city() -> None:
+def test_search_places_returns_note_when_city_cannot_be_geocoded(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
+    monkeypatch.setattr(places, "geocode_city", lambda _city: None)
+
     res = search_places(city="Atlantis")
     assert res["matches"] == []
-    assert "Lisbon" in res["note"]
+    assert "geocode" in res["note"]
 
 
-def test_estimate_travel_time_between_belem_and_alfama() -> None:
-    res = estimate_travel_time("Belem Tower", "Castelo de Sao Jorge", mode="transit")
+def test_estimate_travel_time_uses_osrm_and_caches_route(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
+    set_cached(
+        "v2:overpass:poi:lisbon",
+        {
+            "city": "Lisbon",
+            "matches": [
+                {
+                    "place_id": "osm:node:1",
+                    "city": "Lisbon",
+                    "name": "Belem Tower",
+                    "category": "attraction",
+                    "neighborhood": "Belem",
+                    "lat": 38.6916,
+                    "lng": -9.2160,
+                    "currency": None,
+                    "estimated_cost": None,
+                    "pricing_available": False,
+                    "typical_duration_mins": 90,
+                    "opening_hours": "Unknown",
+                    "closed_days": [],
+                    "tags": ["attraction"],
+                    "summary": "OpenStreetMap listing",
+                },
+                {
+                    "place_id": "osm:node:2",
+                    "city": "Lisbon",
+                    "name": "Castle",
+                    "category": "attraction",
+                    "neighborhood": "Alfama",
+                    "lat": 38.7139,
+                    "lng": -9.1335,
+                    "currency": None,
+                    "estimated_cost": None,
+                    "pricing_available": False,
+                    "typical_duration_mins": 90,
+                    "opening_hours": "Unknown",
+                    "closed_days": [],
+                    "tags": ["historic"],
+                    "summary": "OpenStreetMap listing",
+                },
+            ],
+        },
+    )
+    api_calls = 0
+
+    def fake_urlopen(_request, timeout):
+        nonlocal api_calls
+        api_calls += 1
+        return BytesIO(json.dumps({"code": "Ok", "routes": [{"distance": 7000, "duration": 1200}]}).encode())
+
+    monkeypatch.setattr(routing, "urlopen", fake_urlopen)
+    res = estimate_travel_time("Belem Tower", "Castle", mode="transit")
+    cached = estimate_travel_time("Belem Tower", "Castle", mode="taxi")
+
     assert "error" not in res
-    assert res["duration_mins"] > 15
-    assert res["distance_km"] > 5
-    assert res["estimated_cost"] == 2.5
+    assert res["duration_mins"] == 34
+    assert res["distance_km"] == 7
+    assert res["estimated_cost"] is None
+    assert "estimated" in res["note"]
+    assert cached["distance_km"] == 7
+    assert cached["estimated_cost"] is None
+    assert api_calls == 1
 
 
-def test_estimate_travel_time_handles_unknown_place() -> None:
+def test_estimate_travel_time_handles_unknown_place(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
     res = estimate_travel_time("Unknown Spot", "Belem Tower", mode="walking")
     assert "error" in res
 

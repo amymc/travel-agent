@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import time
 
 from google.genai import types
 
@@ -14,7 +15,8 @@ from app.domain.models import (
     ItineraryDraft,
     TripRequest,
 )
-from app.services.llm_client import GeminiItineraryClient, LLMGenerationError
+from app.config import settings
+from app.services.llm_client import GeminiItineraryClient, LLMGenerationError, LLMTimeoutError
 
 
 @dataclass
@@ -45,6 +47,15 @@ class TravelAgentLoop:
         self.max_repairs = max_repairs
 
     def run(self, request: TripRequest) -> AgentRunResult:
+        deadline = time.monotonic() + settings.agent_run_timeout_seconds
+
+        def ensure_time_remaining() -> None:
+            if time.monotonic() >= deadline:
+                raise LLMTimeoutError(
+                    f"Travel planning exceeded {settings.agent_run_timeout_seconds} seconds. "
+                    "Please try again."
+                )
+
         ctx = ToolExecutionContext(request=request, max_repairs=self.max_repairs)
         declarations = build_tool_declarations()
         tool_config = types.GenerateContentConfig(
@@ -66,10 +77,12 @@ class TravelAgentLoop:
         nudged_for_submission = False
 
         for step in range(1, self.max_steps + 1):
+            ensure_time_remaining()
             response, model_used = self.llm_client.call_with_fallback(
                 contents=contents,
                 config=tool_config,
             )
+            ensure_time_remaining()
             last_model_used = model_used
 
             candidates = getattr(response, "candidates", None) or []
@@ -83,9 +96,11 @@ class TravelAgentLoop:
                 response_parts: list[types.Part] = []
 
                 for call in function_calls:
+                    ensure_time_remaining()
                     call_name = call.name or ""
                     call_args = dict(call.args) if call.args else {}
                     tool_result, summary = execute_tool_call(call_name, call_args, ctx)
+                    ensure_time_remaining()
 
                     step_calls.append(
                         AgentToolCall(
@@ -172,7 +187,9 @@ class TravelAgentLoop:
             )
 
         # Safety net: fall back to a structured-output call if tool calling didn't yield a draft.
+        ensure_time_remaining()
         draft, fallback_model = self.llm_client.generate_itinerary(request)
+        ensure_time_remaining()
         trace.append(
             AgentStepTrace(
                 step=len(trace) + 1,

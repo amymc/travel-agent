@@ -9,13 +9,17 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables or .env files."""
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.8-flash"
-    gemini_fallback_models: str = "gemini-3.6-flash,gemini-3.5-flash-lite"
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_fallback_models: str = "gemini-3.8-flash,gemini-3.6-flash"
+    gemini_request_timeout_ms: int = 120_000
+    agent_run_timeout_seconds: int = 300
     cors_origins: str = "http://localhost:5173"
     cache_db_path: str = "data/api_cache.sqlite3"
     osm_user_agent: str = "AITravelAgent/0.1 (local travel planning app)"
     nominatim_url: str = "https://nominatim.openstreetmap.org"
     overpass_url: str = "https://overpass-api.de/api/interpreter"
+    overpass_fallback_url: str = "https://overpass.private.coffee/api/interpreter"
+    overpass_request_timeout_seconds: int = 4
     osrm_driving_url: str = "https://router.project-osrm.org"
     osrm_foot_url: str = "https://routing.openstreetmap.de/routed-foot"
 

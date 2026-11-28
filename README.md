@@ -45,6 +45,8 @@ Open `http://localhost:5173`. Vite proxies `/api` requests to `http://localhost:
 
 ### External map data
 
-The geocoding, POI, and routing endpoints are configurable with the `NOMINATIM_URL`, `OVERPASS_URL`, `OSRM_DRIVING_URL`, and `OSRM_FOOT_URL` environment variables. They use public OpenStreetMap services and do not require API keys. Requests identify this app with `OSM_USER_AGENT`; keep public-service use modest. The SQLite cache path is configurable with `CACHE_DB_PATH`. Cached results persist across backend restarts. OpenStreetMap data is © OpenStreetMap contributors and available under the ODbL; public services have usage limits and no uptime guarantee.
+The geocoding, POI, and routing endpoints are configurable with the `NOMINATIM_URL`, `OVERPASS_URL`, `OVERPASS_FALLBACK_URL`, `OSRM_DRIVING_URL`, and `OSRM_FOOT_URL` environment variables. They use public OpenStreetMap services and do not require API keys. A transient Overpass error automatically tries the fallback instance. Requests identify this app with `OSM_USER_AGENT`; keep public-service use modest. The SQLite cache path is configurable with `CACHE_DB_PATH`. Cached results persist across backend restarts. OpenStreetMap data is © OpenStreetMap contributors and available under the ODbL; public services have usage limits and no uptime guarantee.
+
+Gemini requests are limited to `GEMINI_REQUEST_TIMEOUT_MS` (default 120 seconds), and an agent run is limited to `AGENT_RUN_TIMEOUT_SECONDS` (default 300 seconds). The browser stops waiting after 7 minutes and displays a timeout error if the backend fails to respond.
 
 OSM does not provide dependable admission, meal, hotel, or transit fares. Search results therefore flag pricing as unavailable; taxi and transit fares remain rough estimates. OSRM provides routed walking and driving times; transit duration is estimated from routed distance.

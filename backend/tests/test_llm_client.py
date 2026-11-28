@@ -1,11 +1,13 @@
 from types import SimpleNamespace
 import pytest
+from google.genai import types
 from google.genai import errors as genai_errors
 
 from app.domain.models import DayPlan, ItineraryDraft, ItineraryItem, TripRequest
 from app.services.llm_client import (
     GeminiItineraryClient,
     LLMGenerationError,
+    LLMTimeoutError,
     LLMUnavailableError,
 )
 
@@ -75,6 +77,56 @@ def test_retries_primary_then_falls_back_on_503() -> None:
     assert sleeps == [1.0]
 
 
+def test_falls_back_to_next_model_on_deadline_exceeded() -> None:
+    calls: list[str] = []
+    draft = _sample_draft()
+
+    class FakeModels:
+        def generate_content(self, *, model: str, **kwargs):
+            calls.append(model)
+            if model == "gemini-3.8-flash":
+                raise _api_error(504, "Deadline expired", "DEADLINE_EXCEEDED")
+            return SimpleNamespace(parsed=draft, text=None)
+
+    fake_client = SimpleNamespace(models=FakeModels())
+    client = GeminiItineraryClient(
+        api_key="test-key",
+        model="gemini-3.8-flash",
+        fallback_models=["gemini-3.6-flash"],
+        client_factory=lambda _: fake_client,
+        sleep_fn=lambda _: None,
+    )
+
+    result, model_used = client.generate_itinerary(_sample_request())
+
+    assert result == draft
+    assert model_used == "gemini-3.6-flash"
+    assert calls == ["gemini-3.8-flash", "gemini-3.6-flash"]
+
+
+def test_stops_after_one_fallback_model_also_hits_deadline() -> None:
+    calls: list[str] = []
+
+    class FakeModels:
+        def generate_content(self, *, model: str, **kwargs):
+            calls.append(model)
+            raise _api_error(504, "Deadline expired", "DEADLINE_EXCEEDED")
+
+    fake_client = SimpleNamespace(models=FakeModels())
+    client = GeminiItineraryClient(
+        api_key="test-key",
+        model="gemini-3.8-flash",
+        fallback_models=["gemini-3.5-flash-lite", "gemini-3.6-flash"],
+        client_factory=lambda _: fake_client,
+        sleep_fn=lambda _: None,
+    )
+
+    with pytest.raises(LLMUnavailableError, match="gemini-3.8-flash, gemini-3.5-flash-lite"):
+        client.generate_itinerary(_sample_request())
+
+    assert calls == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+
+
 def test_fails_immediately_on_non_retryable_400() -> None:
     calls: list[str] = []
 
@@ -122,3 +174,25 @@ def test_raises_unavailable_when_all_models_return_503() -> None:
         "gemini-3.6-flash",
         "gemini-3.5-flash-lite",
     ]
+
+
+def test_times_out_without_retrying_or_trying_fallback_models() -> None:
+    calls: list[str] = []
+
+    class FakeModels:
+        def generate_content(self, *, model: str, **kwargs):
+            calls.append(model)
+            raise TimeoutError("request timed out")
+
+    fake_client = SimpleNamespace(models=FakeModels())
+    client = GeminiItineraryClient(
+        api_key="test-key",
+        model="gemini-3.8-flash",
+        fallback_models=["gemini-3.6-flash"],
+        client_factory=lambda _: fake_client,
+    )
+
+    with pytest.raises(LLMTimeoutError, match="did not respond"):
+        client.call_with_fallback(contents="prompt", config=types.GenerateContentConfig())
+
+    assert calls == ["gemini-3.8-flash"]

@@ -7,6 +7,7 @@ from app.services.llm_client import (
     GeminiItineraryClient,
     LLMConfigurationError,
     LLMGenerationError,
+    LLMTimeoutError,
     LLMUnavailableError,
 )
 
@@ -34,6 +35,11 @@ def plan_trip(
     except (LLMConfigurationError, LLMUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except LLMTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=str(exc),
         ) from exc
     except LLMGenerationError as exc:

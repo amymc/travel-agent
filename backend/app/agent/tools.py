@@ -117,7 +117,7 @@ def execute_tool_call(
             summary = f"Found {len(matches)} place(s) in {parsed.city}"
             if result.get("note"):
                 summary = f"{summary} ({result['note']})"
-            return result, summary
+            return dict(result), summary
 
         if name == "get_travel_time":
             parsed = GetTravelTimeArgs.model_validate(args)
@@ -127,7 +127,7 @@ def execute_tool_call(
                 mode=parsed.mode,
             )
             if "error" in result:
-                return result, f"Lookup error: {result['error']}"
+                return dict(result), f"Lookup error: {result['error']}"
             cost = result.get("estimated_cost")
             price_text = (
                 "no fare"
@@ -140,7 +140,7 @@ def execute_tool_call(
                 f"{result['duration_mins']} mins ({result['distance_km']} km, "
                 f"{price_text}) via {result['mode']}"
             )
-            return result, summary
+            return dict(result), summary
 
         if name in {"validate_draft_itinerary", "submit_itinerary"}:
             draft = ItineraryDraft.model_validate(args)
@@ -201,4 +201,10 @@ def execute_tool_call(
         error_text = f"Invalid arguments for '{name}': {exc.errors()}"
         return {"error": error_text}, f"Argument error on {name}"
     except Exception as exc:
-        return {"error": f"Tool '{name}' failed: {exc}"}, f"Tool failure on {name}"
+        detail = " ".join(str(exc).split())
+        if len(detail) > 200:
+            detail = f"{detail[:197]}..."
+        summary = f"Tool failure on {name}: {type(exc).__name__}"
+        if detail:
+            summary = f"{summary}: {detail}"
+        return {"error": f"Tool '{name}' failed: {exc}"}, summary

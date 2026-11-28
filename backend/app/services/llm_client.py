@@ -23,8 +23,12 @@ class LLMGenerationError(RuntimeError):
     """Raised when the LLM fails to return a valid structured itinerary."""
 
 
+class LLMTimeoutError(LLMGenerationError):
+    """Raised when a Gemini request or complete agent run exceeds its time limit."""
+
+
 RETRYABLE_STATUS_CODES = {429, 503}
-FALLBACK_STATUS_CODES = {404, 429, 503}
+FALLBACK_STATUS_CODES = {404, 429, 503, 504}
 
 
 def _extract_error_code(exc: Exception) -> int | None:
@@ -49,6 +53,14 @@ def _should_try_fallback(exc: Exception) -> bool:
     return _is_retryable_capacity_error(exc)
 
 
+def _is_timeout_error(exc: Exception) -> bool:
+    return (
+        isinstance(exc, TimeoutError)
+        or "timeout" in type(exc).__name__.casefold()
+        or "timed out" in str(exc).casefold()
+    )
+
+
 class GeminiItineraryClient:
     """Thin wrapper around the google-genai SDK with retry and model fallback."""
 
@@ -65,7 +77,12 @@ class GeminiItineraryClient:
         self.fallback_models = (
             fallback_models if fallback_models is not None else settings.fallback_model_list
         )
-        self._client_factory = client_factory or (lambda key: genai.Client(api_key=key))
+        self._client_factory = client_factory or (
+            lambda key: genai.Client(
+                api_key=key,
+                http_options=types.HttpOptions(timeout=settings.gemini_request_timeout_ms),
+            )
+        )
         self._sleep = sleep_fn
 
     def _ensure_configured(self) -> genai.Client:
@@ -96,21 +113,47 @@ class GeminiItineraryClient:
         client = self._ensure_configured()
         models = self._candidate_models()
         last_error: Exception | None = None
+        models_tried: list[str] = []
+        deadline_exceeded_seen = False
 
         for idx, model_name in enumerate(models):
+            # A server deadline usually indicates that this request/model is too slow.
+            # Try one alternate model, then return promptly instead of spending the
+            # entire agent-run budget timing out every configured model.
+            if deadline_exceeded_seen and idx > 1:
+                break
+            models_tried.append(model_name)
             is_primary = idx == 0
             max_attempts = 2 if is_primary else 1
+            thinking_level = (
+                types.ThinkingLevel.MINIMAL
+                if "flash-lite" in model_name
+                else types.ThinkingLevel.LOW
+            )
+            model_config = config.model_copy(
+                update={
+                    "thinking_config": types.ThinkingConfig(thinking_level=thinking_level)
+                }
+            )
 
             for attempt in range(max_attempts):
                 try:
                     response = client.models.generate_content(
                         model=model_name,
                         contents=contents,
-                        config=config,
+                        config=model_config,
                     )
                     return response, model_name
                 except Exception as exc:
                     last_error = exc
+                    if _extract_error_code(exc) == 504:
+                        deadline_exceeded_seen = True
+                    if _is_timeout_error(exc):
+                        timeout_seconds = settings.gemini_request_timeout_ms / 1000
+                        raise LLMTimeoutError(
+                            f"Gemini did not respond within {timeout_seconds:g} seconds. "
+                            "Please try again."
+                        ) from exc
                     if _is_retryable_capacity_error(exc) and attempt + 1 < max_attempts:
                         self._sleep(1.0)
                         continue
@@ -118,10 +161,10 @@ class GeminiItineraryClient:
                         break
                     raise LLMGenerationError(f"Gemini request failed: {exc}") from exc
 
-        tried = ", ".join(models)
+        tried = ", ".join(models_tried)
         raise LLMUnavailableError(
-            f"All configured Gemini models ({tried}) are currently experiencing high demand or "
-            f"rate limits. Please try again in a few seconds. Last error: {last_error}"
+            f"All configured Gemini models ({tried}) are currently overloaded, rate-limited, or "
+            f"timing out. Please try again shortly. Last error: {last_error}"
         ) from last_error
 
     def generate_itinerary(self, request: TripRequest) -> tuple[ItineraryDraft, str]:

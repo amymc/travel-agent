@@ -1,5 +1,7 @@
 import json
 from io import BytesIO
+from urllib.error import HTTPError, URLError
+from urllib.parse import unquote
 
 from app.agent.tools import ToolExecutionContext, execute_tool_call
 from app.domain.models import TripRequest
@@ -31,10 +33,12 @@ def test_search_places_filters_live_api_results_and_reuses_city_cache(
         lambda city: {"lat": 41.15, "lng": -8.61, "display_name": city},
     )
     api_calls = 0
+    overpass_queries: list[str] = []
 
-    def fake_urlopen(_request, timeout):
+    def fake_urlopen(request, timeout):
         nonlocal api_calls
         api_calls += 1
+        overpass_queries.append(unquote(request.data.decode()))
         return BytesIO(
             json.dumps(
                 {
@@ -64,6 +68,7 @@ def test_search_places_filters_live_api_results_and_reuses_city_cache(
 
     monkeypatch.setattr(places, "urlopen", fake_urlopen)
     restaurant_results = search_places("Porto", category="restaurant", query="seafood")
+    cached_restaurant_results = search_places("Porto", category="restaurant", query="corner")
     attraction_results = search_places("Porto", category="attraction")
 
     assert restaurant_results["count"] == 1
@@ -71,8 +76,14 @@ def test_search_places_filters_live_api_results_and_reuses_city_cache(
     assert restaurant_results["matches"][0]["estimated_cost"] is None
     assert "note" in restaurant_results
     assert "prices" in restaurant_results["note"].lower()
+    assert cached_restaurant_results["matches"][0]["name"] == "Seafood Corner"
     assert attraction_results["matches"][0]["name"] == "Old Castle"
-    assert api_calls == 1
+    assert api_calls == 2
+    assert "amenity" in overpass_queries[0]
+    assert "historic" not in overpass_queries[0]
+    assert "historic" in overpass_queries[1]
+    assert "amenity" not in overpass_queries[1]
+    assert "around:5000" in overpass_queries[0]
 
 
 def test_search_places_returns_note_when_city_cannot_be_geocoded(monkeypatch, tmp_path) -> None:
@@ -84,10 +95,65 @@ def test_search_places_returns_note_when_city_cannot_be_geocoded(monkeypatch, tm
     assert "geocode" in res["note"]
 
 
+def test_search_places_uses_fallback_overpass_after_gateway_error(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
+    monkeypatch.setattr(
+        places,
+        "geocode_city",
+        lambda city: {"lat": 41.15, "lng": -8.61, "display_name": city},
+    )
+    endpoints: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        endpoints.append(request.full_url)
+        if "overpass-api.de" in request.full_url:
+            raise HTTPError(request.full_url, 502, "Bad Gateway", None, None)
+        return BytesIO(json.dumps({"elements": []}).encode())
+
+    monkeypatch.setattr(places, "urlopen", fake_urlopen)
+    result = search_places("Lisbon")
+
+    assert result["count"] == 0
+    assert len(endpoints) == 2
+    assert "overpass-api.de" in endpoints[0]
+    assert "overpass.private.coffee" in endpoints[1]
+
+
+def test_search_places_infers_category_and_cools_down_after_provider_failure(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
+    monkeypatch.setattr(
+        places,
+        "geocode_city",
+        lambda city: {"lat": 41.15, "lng": -8.61, "display_name": city},
+    )
+    places._overpass_failures.clear()
+    api_calls = 0
+
+    def unavailable(_request, timeout):
+        nonlocal api_calls
+        api_calls += 1
+        raise URLError("service unavailable")
+
+    monkeypatch.setattr(places, "urlopen", unavailable)
+    first = search_places("Cooldownville", query="history")
+    second = search_places("Cooldownville", query="viewpoint")
+
+    assert first["count"] == 0
+    assert "temporarily unavailable" in first["note"]
+    assert "temporarily unavailable" in second["note"]
+    # history and viewpoint both infer attraction, so the second call avoids
+    # repeating the two slow public endpoint requests during the cooldown.
+    assert api_calls == 2
+
+
 def test_estimate_travel_time_uses_osrm_and_caches_route(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "cache.sqlite3"))
     set_cached(
-        "v2:overpass:poi:lisbon",
+        "v3:overpass:poi:lisbon:all",
         {
             "city": "Lisbon",
             "matches": [
@@ -223,3 +289,17 @@ def test_execute_tool_call_handles_unknown_tool_and_bad_args() -> None:
 
     res_bad, _ = execute_tool_call("search_places", {"max_cost": -10}, ctx)
     assert "Invalid arguments" in res_bad["error"]
+
+
+def test_execute_tool_call_includes_service_failure_in_trace_summary(monkeypatch) -> None:
+    ctx = ToolExecutionContext(request=_sample_request())
+
+    def fail_search(**_kwargs):
+        raise RuntimeError("Overpass returned HTTP 504")
+
+    monkeypatch.setattr("app.agent.tools.search_places", fail_search)
+    result, summary = execute_tool_call("search_places", {"city": "Lisbon"}, ctx)
+
+    assert "Overpass returned HTTP 504" in result["error"]
+    assert "Tool failure on search_places: RuntimeError" in summary
+    assert "Overpass returned HTTP 504" in summary

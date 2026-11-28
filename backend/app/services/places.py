@@ -23,11 +23,15 @@ from app.services.place_types import (
 )
 
 Category = PlaceCategory
+RETRYABLE_OVERPASS_STATUS_CODES = {429, 500, 502, 503, 504}
 _NOMINATIM_RESULTS = TypeAdapter(list[NominatimPlace])
 _CACHED_GEOCODE = TypeAdapter(CachedGeocode)
 _CACHED_PLACE_SEARCH = TypeAdapter(CachedPlaceSearch)
 _nominatim_lock = Lock()
 _last_nominatim_request = 0.0
+_overpass_failure_lock = Lock()
+_overpass_failures: dict[str, tuple[float, str]] = {}
+_OVERPASS_FAILURE_COOLDOWN_SECONDS = 30.0
 
 
 def _get_json(url: str, *, timeout: float = 20) -> object:
@@ -86,6 +90,25 @@ def _category_tags(category: Category | None) -> list[str]:
     ]
 
 
+def _infer_category(query: str | None) -> Category | None:
+    """Infer a category for common keywords to avoid unnecessarily broad Overpass queries."""
+    terms = set(re.findall(r"[\w'-]+", (query or "").casefold()))
+    if terms & {"hotel", "hotels", "hostel", "hostels", "lodging", "accommodation", "stay"}:
+        return "lodging"
+    if terms & {
+        "seafood", "restaurant", "restaurants", "cafe", "cafes", "coffee", "food",
+        "lunch", "dinner", "breakfast", "brunch", "ramen", "pizza", "sushi",
+    }:
+        return "restaurant"
+    if terms & {
+        "history", "historic", "museum", "museums", "viewpoint", "viewpoints", "castle",
+        "church", "churches", "attraction", "attractions", "sightseeing", "landmark",
+        "landmarks", "gallery", "park", "parks", "temple", "temples",
+    }:
+        return "attraction"
+    return None
+
+
 def _classify(tags: dict[str, str]) -> Category | None:
     if tags.get("amenity") in {"restaurant", "cafe", "fast_food", "food_court", "pub", "bar"}:
         return "restaurant"
@@ -94,6 +117,35 @@ def _classify(tags: dict[str, str]) -> Category | None:
     if tags.get("tourism") or tags.get("historic") or tags.get("leisure") == "park":
         return "attraction"
     return None
+
+
+def _fetch_overpass(query: str) -> object:
+    endpoints = dict.fromkeys(
+        (settings.overpass_url, settings.overpass_fallback_url)
+    )
+    errors: list[str] = []
+    for endpoint in endpoints:
+        request = Request(
+            endpoint,
+            data=urlencode({"data": query}).encode(),
+            headers={
+                "User-Agent": settings.osm_user_agent,
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=settings.overpass_request_timeout_seconds) as response:
+                return json.loads(response.read().decode())
+        except HTTPError as exc:
+            errors.append(f"{endpoint}: HTTP {exc.code} {exc.reason}")
+            if exc.code not in RETRYABLE_OVERPASS_STATUS_CODES:
+                break
+        except (URLError, TimeoutError) as exc:
+            errors.append(f"{endpoint}: {exc}")
+
+    details = "; ".join(errors)
+    raise RuntimeError(f"OpenStreetMap POI search failed on all configured Overpass endpoints: {details}")
 
 
 def search_places(
@@ -105,9 +157,26 @@ def search_places(
 ) -> PlaceSearchResult:
     """Find real OpenStreetMap POIs near a geocoded city and cache the normalized response."""
     city_clean = " ".join(city.split())
-    # Cache one city-wide POI result so later category and keyword searches stay local.
-    key = f"v2:overpass:poi:{city_clean.casefold()}"
+    search_category = category or _infer_category(query)
+    # Keep category-specific results so an attraction request does not make Overpass
+    # scan restaurants and hotels too. Repeated requests for the same city/category
+    # are still served from SQLite.
+    cache_category = search_category or "all"
+    key = f"v3:overpass:poi:{city_clean.casefold()}:{cache_category}"
     cached_payload = get_cached(key)
+    if cached_payload is None:
+        with _overpass_failure_lock:
+            failure = _overpass_failures.get(key)
+            if failure is not None and failure[0] <= time.monotonic():
+                del _overpass_failures[key]
+                failure = None
+        if failure is not None:
+            return {
+                "city": city,
+                "count": 0,
+                "matches": [],
+                "note": f"OpenStreetMap places are temporarily unavailable: {failure[1]}",
+            }
     if cached_payload is None:
         city_location = geocode_city(city_clean)
         if city_location is None:
@@ -120,23 +189,26 @@ def search_places(
 
         lat, lng = city_location["lat"], city_location["lng"]
         selector = "\n".join(
-            f"  {kind}(around:7000,{lat},{lng})[{tag}];"
-            for tag in _category_tags(None)
+            f"  {kind}(around:5000,{lat},{lng})[{tag}];"
+            for tag in _category_tags(search_category)
             for kind in ("node", "way", "relation")
         )
-        query_text = f"[out:json][timeout:18];(\n{selector}\n);out center tags;"
-        request = Request(
-            settings.overpass_url,
-            data=urlencode({"data": query_text}).encode(),
-            headers={"User-Agent": settings.osm_user_agent, "Content-Type": "application/x-www-form-urlencoded"},
-            method="POST",
-        )
+        query_text = f"[out:json][timeout:8];(\n{selector}\n);out center tags;"
         try:
-            with urlopen(request, timeout=25) as response:
-                raw_data: object = json.loads(response.read().decode())
-        except (HTTPError, URLError, TimeoutError) as exc:
-            raise RuntimeError(f"OpenStreetMap POI search failed: {exc}") from exc
-
+            raw_data = _fetch_overpass(query_text)
+        except RuntimeError as exc:
+            reason = " ".join(str(exc).split())
+            with _overpass_failure_lock:
+                _overpass_failures[key] = (
+                    time.monotonic() + _OVERPASS_FAILURE_COOLDOWN_SECONDS,
+                    reason,
+                )
+            return {
+                "city": city,
+                "count": 0,
+                "matches": [],
+                "note": f"OpenStreetMap places are temporarily unavailable: {reason}",
+            }
         data = OverpassResponse.model_validate(raw_data)
         records: list[PlaceRecord] = []
         for item in data.elements:
@@ -181,8 +253,8 @@ def search_places(
         cached_search = _CACHED_PLACE_SEARCH.validate_python(cached_payload)
 
     records = cached_search["matches"]
-    if category:
-        records = [row for row in records if row["category"] == category]
+    if search_category:
+        records = [row for row in records if row["category"] == search_category]
     if query and query.strip():
         terms = [term.casefold() for term in re.findall(r"[\w'-]+", query)]
         scored = [(sum(term in (row["name"] + " " + row["summary"] + " " + " ".join(row["tags"])).casefold() for term in terms), row) for row in records]
@@ -210,7 +282,7 @@ def find_place(identifier: str) -> PlaceRecord | None:
         return None
     with sqlite3.connect(path) as connection:
         rows = connection.execute(
-            "SELECT payload FROM api_cache WHERE cache_key LIKE 'v2:overpass:poi:%'"
+            "SELECT payload FROM api_cache WHERE cache_key LIKE 'v3:overpass:poi:%'"
         ).fetchall()
     records: list[PlaceRecord] = []
     for (payload,) in rows:

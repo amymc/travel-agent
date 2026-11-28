@@ -130,11 +130,14 @@ class GeminiItineraryClient:
                 if "flash-lite" in model_name
                 else types.ThinkingLevel.LOW
             )
-            model_config = config.model_copy(
-                update={
-                    "thinking_config": types.ThinkingConfig(thinking_level=thinking_level)
-                }
+            # The SDK's Pydantic `model_copy()` annotation currently triggers a
+            # self-referential type error in Pylance. Rebuild through the public
+            # constructor after replacing only the model-specific thinking setting.
+            config_data = config.model_dump(exclude_none=True)
+            config_data["thinking_config"] = types.ThinkingConfig(
+                thinking_level=thinking_level
             )
+            model_config = types.GenerateContentConfig(**config_data)
 
             for attempt in range(max_attempts):
                 try:

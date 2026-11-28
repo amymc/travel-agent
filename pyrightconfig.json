@@ -1,13 +1,6 @@
 {
-  "include": [
-    "backend/app",
-    "backend/tests"
-  ],
-  "exclude": [
-    "**/.venv",
-    "**/.pytest_cache",
-    "**/__pycache__"
-  ],
+  "include": ["backend/app", "backend/tests"],
+  "exclude": ["**/.venv", "**/.pytest_cache", "**/__pycache__"],
   "pythonVersion": "3.12",
   "venvPath": "backend",
   "venv": ".venv",

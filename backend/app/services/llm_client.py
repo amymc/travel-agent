@@ -1,6 +1,6 @@
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -69,7 +69,7 @@ class GeminiItineraryClient:
         api_key: str | None = None,
         model: str | None = None,
         fallback_models: list[str] | None = None,
-        client_factory: Callable[[str], genai.Client] | None = None,
+        client_factory: Callable[[str], object] | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         self.api_key = (api_key if api_key is not None else settings.gemini_api_key).strip()
@@ -91,7 +91,7 @@ class GeminiItineraryClient:
                 "GEMINI_API_KEY is not configured. Copy .env.example to .env and add your "
                 "free Google AI Studio API key."
             )
-        return self._client_factory(self.api_key)
+        return cast(genai.Client, self._client_factory(self.api_key))
 
     def _candidate_models(self) -> list[str]:
         seen: set[str] = set()

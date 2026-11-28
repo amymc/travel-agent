@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Prettier
+        entry: frontend/node_modules/.bin/prettier --write --ignore-unknown
+        language: system
+        files: \.(css|html|json|md|ts|tsx|yaml|yml)$
+        exclude: ^(frontend/node_modules/|frontend/dist/|backend/\.venv/|backend/app/data/)
+
+      - id: pyright
+        name: Pyright Python type check
+        entry: frontend/node_modules/.bin/pyright --project pyrightconfig.json
+        language: system
+        pass_filenames: false
+
+      - id: typescript
+        name: TypeScript type check
+        entry: npm --prefix frontend run typecheck
+        language: system
+        pass_filenames: false

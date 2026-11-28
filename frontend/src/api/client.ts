@@ -100,7 +100,9 @@ async function streamTrip(
         const event = JSON.parse(data) as AgentStreamEvent;
         onEvent(event);
         if (event.type === "error") {
-          throw new Error(typeof event.message === "string" ? event.message : "Trip planning failed.");
+          throw new Error(
+            typeof event.message === "string" ? event.message : "Trip planning failed.",
+          );
         }
         if (event.type === "complete" && event.response) {
           return event.response as ItineraryResponse;

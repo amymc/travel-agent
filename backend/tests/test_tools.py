@@ -1,4 +1,5 @@
 import json
+from email.message import Message
 from io import BytesIO
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote
@@ -109,7 +110,7 @@ def test_search_places_uses_fallback_overpass_after_gateway_error(
     def fake_urlopen(request, timeout):
         endpoints.append(request.full_url)
         if "overpass-api.de" in request.full_url:
-            raise HTTPError(request.full_url, 502, "Bad Gateway", None, None)
+            raise HTTPError(request.full_url, 502, "Bad Gateway", Message(), None)
         return BytesIO(json.dumps({"elements": []}).encode())
 
     monkeypatch.setattr(places, "urlopen", fake_urlopen)
@@ -205,11 +206,14 @@ def test_estimate_travel_time_uses_osrm_and_caches_route(monkeypatch, tmp_path) 
     res = estimate_travel_time("Belem Tower", "Castle", mode="transit")
     cached = estimate_travel_time("Belem Tower", "Castle", mode="taxi")
 
-    assert "error" not in res
+    if "error" in res:
+        raise AssertionError(res["error"])
+    if "error" in cached:
+        raise AssertionError(cached["error"])
     assert res["duration_mins"] == 34
     assert res["distance_km"] == 7
     assert res["estimated_cost"] is None
-    assert "estimated" in res["note"]
+    assert "estimated" in (res.get("note") or "")
     assert cached["distance_km"] == 7
     assert cached["estimated_cost"] is None
     assert api_calls == 1

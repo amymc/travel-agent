@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  getTripThread,
-  getTripThreads,
-  streamPlanTrip,
-  streamReviseTrip,
-} from "./api/client";
+import { getTripThread, getTripThreads, streamPlanTrip, streamReviseTrip } from "./api/client";
 import { ItineraryView } from "./components/ItineraryView";
 import { TripPromptForm } from "./components/TripPromptForm";
 import type {
@@ -51,9 +46,7 @@ export function App() {
       setResult(response);
       await refreshThreads();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to generate itinerary.",
-      );
+      setError(err instanceof Error ? err.message : "Failed to generate itinerary.");
     } finally {
       setIsLoading(false);
     }
@@ -65,11 +58,7 @@ export function App() {
     setError(null);
     setStreamEvents([]);
     try {
-      const response = await streamReviseTrip(
-        result.thread_id,
-        instruction,
-        receiveAgentEvent,
-      );
+      const response = await streamReviseTrip(result.thread_id, instruction, receiveAgentEvent);
       const revisedBudget = response.total_estimated_cost + response.budget_remaining;
       setResult(response);
       setLastBudget(revisedBudget);
@@ -105,12 +94,8 @@ export function App() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              AI Travel Agent
-            </h1>
-            <p className="text-xs text-slate-500">
-              Milestone 5 — Streaming, Saved Trips & Polish
-            </p>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">AI Travel Agent</h1>
+            <p className="text-xs text-slate-500">Milestone 5 — Streaming, Saved Trips & Polish</p>
           </div>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
             React · FastAPI · Gemini
@@ -145,7 +130,8 @@ export function App() {
                         {thread.itinerary_title || thread.title}
                       </span>
                       <span className="text-[11px] text-slate-500">
-                        {thread.revision_number ?? 0} saved {thread.revision_number === 1 ? "version" : "versions"}
+                        {thread.revision_number ?? 0} saved{" "}
+                        {thread.revision_number === 1 ? "version" : "versions"}
                       </span>
                     </button>
                   ))}
@@ -174,7 +160,10 @@ export function App() {
                               ? "Trip thread saved; planning started"
                               : event.type.replaceAll("_", " ");
                     return (
-                      <p key={`${String(event.type)}-${index}`} className="truncate text-xs text-slate-600">
+                      <p
+                        key={`${String(event.type)}-${index}`}
+                        className="truncate text-xs text-slate-600"
+                      >
                         {message}
                       </p>
                     );

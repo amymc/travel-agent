@@ -28,9 +28,7 @@ export function AgentTracePanel({ trace }: AgentTracePanelProps) {
             {totalToolCalls === 1 ? "tool call" : "tool calls"}
           </span>
         </div>
-        <span className="text-xs font-medium text-slate-500">
-          {expanded ? "Hide" : "Show"}
-        </span>
+        <span className="text-xs font-medium text-slate-500">{expanded ? "Hide" : "Show"}</span>
       </button>
 
       {expanded && (
@@ -42,9 +40,7 @@ export function AgentTracePanel({ trace }: AgentTracePanelProps) {
                 <span className="font-mono text-slate-500">{step.model_used}</span>
               </div>
 
-              {step.note && (
-                <p className="text-xs text-slate-600 italic">{step.note}</p>
-              )}
+              {step.note && <p className="text-xs text-slate-600 italic">{step.note}</p>}
 
               {step.tool_calls.length > 0 && (
                 <ul className="space-y-1.5">

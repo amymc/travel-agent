@@ -48,6 +48,20 @@ npm run dev
 
 Open `http://localhost:5173`. Vite proxies `/api` requests to `http://localhost:8000`.
 
+### 4. Install formatting and type-check hooks
+
+After `uv sync` and `npm install`, enable the repository's Git hooks:
+
+```bash
+uv run --project backend pre-commit install
+```
+
+The pre-commit hook formats staged TypeScript, JSON, Markdown, CSS, HTML, and YAML with Prettier, then runs Pyright over the Python project and the TypeScript compiler. You can run all hooks manually with:
+
+```bash
+uv run --project backend pre-commit run --all-files
+```
+
 ### External map data
 
 The geocoding, POI, and routing endpoints are configurable with the `NOMINATIM_URL`, `OVERPASS_URL`, `OVERPASS_FALLBACK_URL`, `OSRM_DRIVING_URL`, and `OSRM_FOOT_URL` environment variables. They use public OpenStreetMap services and do not require API keys. A transient Overpass error automatically tries the fallback instance. Requests identify this app with `OSM_USER_AGENT`; keep public-service use modest. The SQLite database path is configurable with `CACHE_DB_PATH`; it stores geocodes, POI searches, routes, trip threads, messages, revision snapshots, and agent events. The stream endpoints are `POST /api/trips/stream` and `POST /api/trips/threads/{thread_id}/revise/stream`. OpenStreetMap data is © OpenStreetMap contributors and available under the ODbL; public services have usage limits and no uptime guarantee.

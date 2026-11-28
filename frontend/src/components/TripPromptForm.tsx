@@ -44,9 +44,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
   const [currency, setCurrency] = useState(EXAMPLE_TRIPS[0].currency);
   const [pace, setPace] = useState<Pace>(EXAMPLE_TRIPS[0].pace);
   const [startDate, setStartDate] = useState("");
-  const [interestsInput, setInterestsInput] = useState(
-    EXAMPLE_TRIPS[0].interests,
-  );
+  const [interestsInput, setInterestsInput] = useState(EXAMPLE_TRIPS[0].interests);
 
   const handleSubmit: SubmitEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
@@ -81,9 +79,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
       className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Describe Your Holiday
-        </h2>
+        <h2 className="text-lg font-semibold text-slate-900">Describe Your Holiday</h2>
         <div className="flex flex-wrap gap-1.5">
           {EXAMPLE_TRIPS.map((example) => (
             <button
@@ -99,10 +95,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
       </div>
 
       <div>
-        <label
-          htmlFor="trip-prompt"
-          className="block text-sm font-medium text-slate-700 mb-1.5"
-        >
+        <label htmlFor="trip-prompt" className="block text-sm font-medium text-slate-700 mb-1.5">
           Holiday description
         </label>
         <textarea
@@ -119,10 +112,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label
-            htmlFor="num-days"
-            className="block text-sm font-medium text-slate-700 mb-1.5"
-          >
+          <label htmlFor="num-days" className="block text-sm font-medium text-slate-700 mb-1.5">
             Days
           </label>
           <input
@@ -131,18 +121,13 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
             min={1}
             max={14}
             value={numDays}
-            onChange={(e) =>
-              setNumDays(Math.max(1, Math.min(14, Number(e.target.value) || 1)))
-            }
+            onChange={(e) => setNumDays(Math.max(1, Math.min(14, Number(e.target.value) || 1)))}
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
 
         <div>
-          <label
-            htmlFor="pace"
-            className="block text-sm font-medium text-slate-700 mb-1.5"
-          >
+          <label htmlFor="pace" className="block text-sm font-medium text-slate-700 mb-1.5">
             Pace
           </label>
           <select
@@ -160,7 +145,8 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
 
       <div>
         <label htmlFor="start-date" className="block text-sm font-medium text-slate-700 mb-1.5">
-          First travel date <span className="font-normal text-slate-500">(optional, for opening-hour checks)</span>
+          First travel date{" "}
+          <span className="font-normal text-slate-500">(optional, for opening-hour checks)</span>
         </label>
         <input
           id="start-date"
@@ -173,10 +159,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
 
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-2">
-          <label
-            htmlFor="max-budget"
-            className="block text-sm font-medium text-slate-700 mb-1.5"
-          >
+          <label htmlFor="max-budget" className="block text-sm font-medium text-slate-700 mb-1.5">
             Max budget
           </label>
           <input
@@ -185,18 +168,13 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
             min={10}
             step="10"
             value={maxBudget}
-            onChange={(e) =>
-              setMaxBudget(Math.max(1, Number(e.target.value) || 1))
-            }
+            onChange={(e) => setMaxBudget(Math.max(1, Number(e.target.value) || 1))}
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
 
         <div>
-          <label
-            htmlFor="currency"
-            className="block text-sm font-medium text-slate-700 mb-1.5"
-          >
+          <label htmlFor="currency" className="block text-sm font-medium text-slate-700 mb-1.5">
             Currency
           </label>
           <select
@@ -214,10 +192,7 @@ export function TripPromptForm({ isLoading, onSubmit }: TripPromptFormProps) {
       </div>
 
       <div>
-        <label
-          htmlFor="interests"
-          className="block text-sm font-medium text-slate-700 mb-1.5"
-        >
+        <label htmlFor="interests" className="block text-sm font-medium text-slate-700 mb-1.5">
           Interests (comma-separated)
         </label>
         <input

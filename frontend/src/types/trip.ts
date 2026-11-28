@@ -1,11 +1,6 @@
 export type Pace = "relaxed" | "moderate" | "packed";
 
-export type ActivityCategory =
-  | "attraction"
-  | "restaurant"
-  | "transport"
-  | "lodging"
-  | "free_time";
+export type ActivityCategory = "attraction" | "restaurant" | "transport" | "lodging" | "free_time";
 
 export interface TripRequest {
   prompt: string;

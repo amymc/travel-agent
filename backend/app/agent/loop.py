@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import time
 from collections.abc import Callable
-from typing import cast
+from typing import Protocol, cast
 
 from google.genai import types
 
@@ -31,6 +31,21 @@ class AgentRunResult:
     trace: list[AgentStepTrace]
 
 
+class AgentLLMClient(Protocol):
+    """Interface used by the loop, also implemented by deterministic test clients."""
+
+    model: str
+
+    def call_with_fallback(
+        self,
+        *,
+        contents: list[types.Content],
+        config: types.GenerateContentConfig,
+    ) -> tuple[object, str]: ...
+
+    def generate_itinerary(self, request: TripRequest) -> tuple[ItineraryDraft, str]: ...
+
+
 class TravelAgentLoop:
     """
     Iterative tool-calling agent loop (Plan -> Call Tools -> Validate -> Repair -> Submit).
@@ -41,7 +56,7 @@ class TravelAgentLoop:
 
     def __init__(
         self,
-        llm_client: GeminiItineraryClient | None = None,
+        llm_client: AgentLLMClient | None = None,
         max_steps: int = 7,
         max_repairs: int = 2,
     ) -> None:
@@ -187,7 +202,7 @@ class TravelAgentLoop:
                             "type": "step_completed",
                             "step": step,
                             "model_used": model_used,
-                            "tool_calls": serialized_calls,
+                            "tool_calls": cast(JsonValue, serialized_calls),
                         }
                     )
 

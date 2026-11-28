@@ -57,7 +57,10 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
     model_used,
     agent_trace,
   } = data;
-  const budgetRatio = Math.min(100, Math.round((total_estimated_cost / Math.max(1, maxBudget)) * 100));
+  const budgetRatio = Math.min(
+    100,
+    Math.round((total_estimated_cost / Math.max(1, maxBudget)) * 100),
+  );
   const overBudget = budget_remaining < 0;
 
   const visibleDays =
@@ -159,7 +162,9 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Estimated cost breakdown</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Select a category to filter the itinerary below.</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Select a category to filter the itinerary below.
+            </p>
           </div>
           <button
             type="button"
@@ -180,11 +185,15 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
               <button
                 key={category}
                 type="button"
-                onClick={() => setSelectedCategory(category === selectedCategory ? "all" : category)}
+                onClick={() =>
+                  setSelectedCategory(category === selectedCategory ? "all" : category)
+                }
                 aria-pressed={selectedCategory === category}
                 className="grid w-full grid-cols-[6rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1 text-left hover:bg-slate-50"
               >
-                <span className="text-xs capitalize text-slate-700">{category.replace("_", " ")}</span>
+                <span className="text-xs capitalize text-slate-700">
+                  {category.replace("_", " ")}
+                </span>
                 <span className="h-2 overflow-hidden rounded-full bg-slate-100">
                   <span
                     className={`block h-full rounded-full ${CATEGORY_CHART_COLORS[category]}`}
@@ -204,12 +213,15 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
         onSubmit={handleRevision}
         className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm"
       >
-        <label htmlFor="revision-instruction" className="block text-sm font-semibold text-slate-900">
+        <label
+          htmlFor="revision-instruction"
+          className="block text-sm font-semibold text-slate-900"
+        >
           Revise this itinerary
         </label>
         <p className="mt-1 text-xs text-slate-600">
-          Ask for a change and the agent will edit this plan while keeping the parts that still work.
-          Budget changes automatically use the original trip currency ({itinerary.currency}).
+          Ask for a change and the agent will edit this plan while keeping the parts that still
+          work. Budget changes automatically use the original trip currency ({itinerary.currency}).
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
@@ -281,50 +293,52 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
               {day.items
                 .filter((item) => selectedCategory === "all" || item.category === selectedCategory)
                 .map((item, idx) => (
-                <div
-                  key={`${day.day_number}-${item.start_time}-${idx}`}
-                  className="rounded-xl border border-slate-100 bg-slate-50/60 p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-slate-700">
-                        {item.start_time} – {item.end_time}
-                      </span>
-                      <span
-                        className={`rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${
-                          CATEGORY_STYLES[item.category]
-                        }`}
-                      >
-                        {item.category.replace("_", " ")}
+                  <div
+                    key={`${day.day_number}-${item.start_time}-${idx}`}
+                    className="rounded-xl border border-slate-100 bg-slate-50/60 p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-semibold text-slate-700">
+                          {item.start_time} – {item.end_time}
+                        </span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize ${
+                            CATEGORY_STYLES[item.category]
+                          }`}
+                        >
+                          {item.category.replace("_", " ")}
+                        </span>
+                      </div>
+                      <span className="text-xs font-semibold text-slate-700">
+                        {itinerary.currency} {item.estimated_cost.toFixed(2)}
                       </span>
                     </div>
-                    <span className="text-xs font-semibold text-slate-700">
-                      {itinerary.currency} {item.estimated_cost.toFixed(2)}
-                    </span>
+
+                    <h4 className="mt-1.5 text-sm font-semibold text-slate-900">{item.title}</h4>
+                    <p className="text-xs font-medium text-slate-500">{item.location}</p>
+                    <p className="mt-1.5 text-sm text-slate-700">{item.description}</p>
+
+                    {item.transit_note && (
+                      <p className="mt-2 text-xs text-slate-500 italic">
+                        Transit: {item.transit_note}
+                      </p>
+                    )}
+                    {item.opening_hours && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Listed hours: {item.opening_hours}
+                      </p>
+                    )}
+                    {item.travel_time_mins_from_previous != null && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Verified travel gap: {item.travel_time_mins_from_previous} min
+                      </p>
+                    )}
                   </div>
-
-                  <h4 className="mt-1.5 text-sm font-semibold text-slate-900">{item.title}</h4>
-                  <p className="text-xs font-medium text-slate-500">{item.location}</p>
-                  <p className="mt-1.5 text-sm text-slate-700">{item.description}</p>
-
-                  {item.transit_note && (
-                    <p className="mt-2 text-xs text-slate-500 italic">
-                      Transit: {item.transit_note}
-                    </p>
-                  )}
-                  {item.opening_hours && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Listed hours: {item.opening_hours}
-                    </p>
-                  )}
-                  {item.travel_time_mins_from_previous != null && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Verified travel gap: {item.travel_time_mins_from_previous} min
-                    </p>
-                  )}
-                </div>
                 ))}
-              {day.items.every((item) => selectedCategory !== "all" && item.category !== selectedCategory) && (
+              {day.items.every(
+                (item) => selectedCategory !== "all" && item.category !== selectedCategory,
+              ) && (
                 <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
                   No {selectedCategory.replace("_", " ")} stops on this day.
                 </p>

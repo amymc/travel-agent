@@ -20,11 +20,11 @@ from app.services.llm_client import (
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
 
-_MONEY = r"(?P<amount>[$€£]?\s*\d[\d,]*(?:\.\d{1,2})?)\s*(?P<code>USD|EUR|GBP)?"
+_MONEY = r"(?P<amount>[$€£]?\s*\d[\d,]*(?:\.\d{1,2})?)\s*(?:USD|EUR|GBP)?"
 
 
 def _apply_budget_instruction(request: TripRequest, instruction: str) -> TripRequest:
-    """Turn explicit budget cut/set language into a hard revised request ceiling."""
+    """Apply explicit budget changes using the original request's currency."""
     normalized = instruction.strip()
     patterns = (
         (
@@ -60,19 +60,6 @@ def _apply_budget_instruction(request: TripRequest, instruction: str) -> TripReq
             .strip()
         )
         amount = float(amount_text)
-        code = match.group("code")
-        symbol = match.group("amount").strip()[:1]
-        symbol_currency = {"$": "USD", "€": "EUR", "£": "GBP"}.get(symbol)
-        target_currency = code or symbol_currency or request.currency
-        if target_currency != request.currency:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"The itinerary budget is in {request.currency}, but this revision uses "
-                    f"{target_currency}. Change the trip currency first; "
-                    "automatic conversion is unavailable."
-                ),
-            )
         revised_budget = request.max_budget - amount if operation == "subtract" else amount
         if revised_budget <= 0:
             raise HTTPException(

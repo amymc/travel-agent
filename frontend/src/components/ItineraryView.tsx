@@ -140,14 +140,14 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
         </label>
         <p className="mt-1 text-xs text-slate-600">
           Ask for a change and the agent will edit this plan while keeping the parts that still work.
-          For budget changes, include the trip currency ({itinerary.currency}).
+          Budget changes automatically use the original trip currency ({itinerary.currency}).
         </p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             id="revision-instruction"
             value={revisionInstruction}
             onChange={(event) => setRevisionInstruction(event.target.value)}
-            placeholder="Day 2 feels too rushed, or reduce the budget by 300 EUR"
+            placeholder="Day 2 feels too rushed, or reduce the budget by 300"
             minLength={3}
             maxLength={2000}
             required

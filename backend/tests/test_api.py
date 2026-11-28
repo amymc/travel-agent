@@ -153,7 +153,7 @@ def test_revision_endpoint_sends_existing_itinerary_and_applies_budget_cut() -> 
         destination="Lisbon",
         title="Current Lisbon plan",
         summary="Original stops",
-        currency="USD",
+        currency="EUR",
         days=[
             DayPlan(
                 day_number=1,
@@ -197,7 +197,7 @@ def test_revision_endpoint_sends_existing_itinerary_and_applies_budget_cut() -> 
                     "prompt": "One day in Lisbon",
                     "num_days": 1,
                     "max_budget": 500,
-                    "currency": "USD",
+                    "currency": "EUR",
                     "pace": "moderate",
                 },
                 "itinerary": existing.model_dump(mode="json"),

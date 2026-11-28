@@ -76,7 +76,7 @@ def test_plan_trip_returns_validated_itinerary_and_agent_trace() -> None:
                     ItineraryItem(
                         start_time="12:30",
                         end_time="14:00",
-                        title="Seafood Lunch",
+                        title="Cervejaria Ramiro",
                         category="restaurant",
                         location="Baixa",
                         description="Grilled sardines and pastel de nata.",
@@ -123,7 +123,10 @@ def test_plan_trip_returns_validated_itinerary_and_agent_trace() -> None:
         assert body["total_estimated_cost"] == 62.0
         assert body["budget_remaining"] == 138.0
         assert body["is_valid"] is True
-        assert body["issues"] == []
+        assert {issue["code"] for issue in body["issues"]} == {
+            "OPENING_HOURS_UNVERIFIED",
+            "TRAVEL_TIME_UNVERIFIED",
+        }
         assert body["model_used"] == "gemini-3.8-flash"
         assert len(body["agent_trace"]) == 1
         assert body["agent_trace"][0]["tool_calls"][0]["name"] == "search_places"
@@ -141,5 +144,70 @@ def test_plan_trip_returns_503_when_api_key_missing() -> None:
         )
         assert res.status_code == 503
         assert "GEMINI_API_KEY" in res.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_revision_endpoint_sends_existing_itinerary_and_applies_budget_cut() -> None:
+    existing = ItineraryDraft(
+        destination="Lisbon",
+        title="Current Lisbon plan",
+        summary="Original stops",
+        currency="USD",
+        days=[
+            DayPlan(
+                day_number=1,
+                theme="Historic center",
+                items=[
+                    ItineraryItem(
+                        start_time="09:00",
+                        end_time="10:00",
+                        title="Castle",
+                        category="attraction",
+                        location="Alfama",
+                        description="Original stop",
+                        estimated_cost=40,
+                    )
+                ],
+            )
+        ],
+    )
+    revised = ItineraryDraft.model_validate(existing.model_dump())
+    revised.title = "Less expensive Lisbon plan"
+    revised.days[0].items[0].estimated_cost = 20
+
+    class RevisionAgent:
+        def run(self, request, *, existing_draft=None, revision_instruction=None):
+            assert existing_draft == existing
+            assert revision_instruction == "Cut $300 from the budget"
+            assert request.max_budget == 200
+            return AgentRunResult(
+                draft=revised,
+                model_used="gemini-3.8-flash",
+                trace=[AgentStepTrace(step=1, model_used="gemini-3.8-flash")],
+            )
+
+    app.dependency_overrides[get_agent_loop] = lambda: RevisionAgent()
+    try:
+        client = TestClient(app)
+        res = client.post(
+            "/api/trips/revise",
+            json={
+                "trip_request": {
+                    "prompt": "One day in Lisbon",
+                    "num_days": 1,
+                    "max_budget": 500,
+                    "currency": "USD",
+                    "pace": "moderate",
+                },
+                "itinerary": existing.model_dump(mode="json"),
+                "instruction": "Cut $300 from the budget",
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["itinerary"]["title"] == "Less expensive Lisbon plan"
+        assert body["budget_remaining"] == 180
+        assert body["is_valid"] is True
     finally:
         app.dependency_overrides.clear()

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from google.genai import types
@@ -50,6 +50,9 @@ class ToolExecutionContext:
     repair_attempts: int = 0
     last_draft: ItineraryDraft | None = None
     submitted_draft: ItineraryDraft | None = None
+    opening_hours_by_place: dict[str, str] = field(default_factory=dict)
+    travel_minutes_by_pair: dict[tuple[str, str], int] = field(default_factory=dict)
+    revision_instruction: str | None = None
 
 
 def build_tool_declarations() -> list[types.FunctionDeclaration]:
@@ -75,8 +78,8 @@ def build_tool_declarations() -> list[types.FunctionDeclaration]:
         types.FunctionDeclaration(
             name="validate_draft_itinerary",
             description=(
-                "Check a draft ItineraryDraft against user constraints (budget total, day count, "
-                "overlapping times, and pace) without finalizing."
+                "Check a draft ItineraryDraft against user constraints (budget, day count, "
+                "overlapping schedules, measured travel gaps, opening hours, and pace) without finalizing."
             ),
             parameters_json_schema=ItineraryDraft.model_json_schema(),
         ),
@@ -84,7 +87,7 @@ def build_tool_declarations() -> list[types.FunctionDeclaration]:
             name="submit_itinerary",
             description=(
                 "Finalize and submit the completed ItineraryDraft. Runs deterministic validation "
-                "and rejects with specific errors if budget or schedule constraints fail."
+                "and rejects with specific errors if budget, travel time, hours, or schedule constraints fail."
             ),
             parameters_json_schema=ItineraryDraft.model_json_schema(),
         ),
@@ -114,6 +117,10 @@ def execute_tool_call(
                 max_cost=parsed.max_cost,
             )
             matches = result.get("matches", [])
+            for place in matches:
+                hours = place.get("opening_hours")
+                if hours and hours.casefold() != "unknown":
+                    ctx.opening_hours_by_place[place["name"].casefold()] = hours
             summary = f"Found {len(matches)} place(s) in {parsed.city}"
             if result.get("note"):
                 summary = f"{summary} ({result['note']})"
@@ -128,6 +135,9 @@ def execute_tool_call(
             )
             if "error" in result:
                 return dict(result), f"Lookup error: {result['error']}"
+            ctx.travel_minutes_by_pair[
+                (result["origin"].casefold(), result["destination"].casefold())
+            ] = result["duration_mins"]
             cost = result.get("estimated_cost")
             price_text = (
                 "no fare"
@@ -144,14 +154,34 @@ def execute_tool_call(
 
         if name in {"validate_draft_itinerary", "submit_itinerary"}:
             draft = ItineraryDraft.model_validate(args)
-            ctx.last_draft = draft
-            total_cost, remaining, issues = validate_itinerary(draft, ctx.request)
+            previous_title_by_day: dict[int, str] = {}
+            for day in draft.days:
+                for item in day.items:
+                    place_hours = ctx.opening_hours_by_place.get(item.title.casefold())
+                    if place_hours is not None:
+                        item.opening_hours = place_hours
+                    previous_title = previous_title_by_day.get(day.day_number)
+                    if previous_title is not None:
+                        measured = ctx.travel_minutes_by_pair.get(
+                            (previous_title.casefold(), item.title.casefold())
+                        )
+                        if measured is not None:
+                            item.travel_time_mins_from_previous = measured
+                    previous_title_by_day[day.day_number] = item.title
+            total_cost, remaining, issues = validate_itinerary(
+                draft, ctx.request, ctx.revision_instruction
+            )
             serialized_issues = [issue.model_dump() for issue in issues]
             errors = [issue for issue in issues if issue.severity == "error"]
+            if not errors:
+                ctx.last_draft = draft
 
             if name == "validate_draft_itinerary":
+                warnings = [issue for issue in issues if issue.severity == "warning"]
                 summary = (
                     f"Valid ({ctx.request.currency} {total_cost:.2f})"
+                    if not errors and not warnings
+                    else f"Valid with {len(warnings)} warning(s): {_format_issue_summary(warnings)}"
                     if not errors
                     else f"{len(errors)} error(s): {_format_issue_summary(errors)}"
                 )
@@ -163,17 +193,23 @@ def execute_tool_call(
                 }, summary
 
             # submit_itinerary
-            if errors and ctx.repair_attempts < ctx.max_repairs:
-                ctx.repair_attempts += 1
-                summary = (
-                    f"Rejected for repair {ctx.repair_attempts}/{ctx.max_repairs}: "
-                    f"{_format_issue_summary(errors)}"
-                )
+            if errors:
+                if ctx.repair_attempts < ctx.max_repairs:
+                    ctx.repair_attempts += 1
+                    summary = (
+                        f"Rejected for repair {ctx.repair_attempts}/{ctx.max_repairs}: "
+                        f"{_format_issue_summary(errors)}"
+                    )
+                else:
+                    summary = (
+                        f"Rejected; repair limit reached with errors: "
+                        f"{_format_issue_summary(errors)}"
+                    )
                 return {
                     "accepted": False,
                     "error": (
                         "Itinerary failed deterministic validation. Fix the error(s) below and "
-                        "call submit_itinerary again."
+                        "call submit_itinerary again. An itinerary with errors cannot be accepted."
                     ),
                     "total_estimated_cost": total_cost,
                     "budget_remaining": remaining,

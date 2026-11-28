@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { planTrip } from "./api/client";
+import { planTrip, reviseTrip } from "./api/client";
 import { ItineraryView } from "./components/ItineraryView";
 import { TripPromptForm } from "./components/TripPromptForm";
 import type { ItineraryResponse, TripRequest } from "./types/trip";
@@ -7,6 +7,7 @@ import type { ItineraryResponse, TripRequest } from "./types/trip";
 export function App() {
   const [result, setResult] = useState<ItineraryResponse | null>(null);
   const [lastBudget, setLastBudget] = useState<number>(650);
+  const [tripRequest, setTripRequest] = useState<TripRequest | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,6 +15,7 @@ export function App() {
     setIsLoading(true);
     setError(null);
     setLastBudget(request.max_budget);
+    setTripRequest(request);
 
     try {
       const response = await planTrip(request);
@@ -22,6 +24,23 @@ export function App() {
       setError(
         err instanceof Error ? err.message : "Failed to generate itinerary.",
       );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleReviseTrip = async (instruction: string) => {
+    if (!result || !tripRequest) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await reviseTrip(tripRequest, result.itinerary, instruction);
+      const revisedBudget = response.total_estimated_cost + response.budget_remaining;
+      setResult(response);
+      setLastBudget(revisedBudget);
+      setTripRequest({ ...tripRequest, max_budget: revisedBudget });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to revise itinerary.");
     } finally {
       setIsLoading(false);
     }
@@ -36,7 +55,7 @@ export function App() {
               AI Travel Agent
             </h1>
             <p className="text-xs text-slate-500">
-              Milestone 3 — External Place Search, Routing, and Cache Validation
+              Milestone 4 — Constraint Validation & Itinerary Revisions
             </p>
           </div>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
@@ -57,7 +76,12 @@ export function App() {
             <TripPromptForm isLoading={isLoading} onSubmit={handlePlanTrip} />
           </div>
           <div className="lg:col-span-7">
-            <ItineraryView data={result} maxBudget={lastBudget} />
+            <ItineraryView
+              data={result}
+              maxBudget={lastBudget}
+              isLoading={isLoading}
+              onRevise={handleReviseTrip}
+            />
           </div>
         </div>
         <footer className="mt-8 text-center text-xs text-slate-500">

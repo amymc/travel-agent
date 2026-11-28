@@ -169,3 +169,60 @@ def test_agent_loop_falls_back_to_structured_output_if_no_tools_called() -> None
 
     assert result.draft == fallback_draft
     assert any("Fallback structured-output" in (step.note or "") for step in result.trace)
+
+
+def test_revision_loop_supplies_existing_itinerary_and_instruction() -> None:
+    current = ItineraryDraft(
+        destination="Lisbon",
+        title="Original plan",
+        summary="Existing stops",
+        currency="EUR",
+        days=[
+            DayPlan(
+                day_number=1,
+                theme="Packed",
+                items=[
+                    ItineraryItem(
+                        start_time="09:00",
+                        end_time="10:00",
+                        title="Original stop",
+                        category="attraction",
+                        location="Lisbon",
+                        description="Keep this stop",
+                        estimated_cost=10,
+                    )
+                ],
+            )
+        ],
+    )
+    revised = ItineraryDraft.model_validate(current.model_dump())
+    revised.title = "Slower plan"
+    response = _make_response(
+        function_calls=[("submit_itinerary", revised.model_dump(mode="json"))]
+    )
+
+    class RevisionLLMClient:
+        model = "gemini-3.8-flash"
+
+        def call_with_fallback(self, *, contents, config):
+            initial_prompt = contents[0].parts[0].text
+            assert "Day 1 feels too rushed" in initial_prompt
+            assert "Original stop" in initial_prompt
+            return response, self.model
+
+        def generate_itinerary(self, request):
+            raise AssertionError("Revision must not fall back to a fresh plan")
+
+    request = TripRequest(
+        prompt="One day in Lisbon",
+        num_days=1,
+        max_budget=100,
+        currency="EUR",
+        pace="moderate",
+    )
+    result = TravelAgentLoop(llm_client=RevisionLLMClient()).run(
+        request,
+        existing_draft=current,
+        revision_instruction="Day 1 feels too rushed",
+    )
+    assert result.draft.title == "Slower plan"

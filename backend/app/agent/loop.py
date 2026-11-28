@@ -3,7 +3,7 @@ import time
 
 from google.genai import types
 
-from app.agent.prompts import SYSTEM_PROMPT, build_trip_prompt
+from app.agent.prompts import SYSTEM_PROMPT, build_revision_prompt, build_trip_prompt
 from app.agent.tools import (
     ToolExecutionContext,
     build_tool_declarations,
@@ -46,7 +46,15 @@ class TravelAgentLoop:
         self.max_steps = max_steps
         self.max_repairs = max_repairs
 
-    def run(self, request: TripRequest) -> AgentRunResult:
+    def run(
+        self,
+        request: TripRequest,
+        *,
+        existing_draft: ItineraryDraft | None = None,
+        revision_instruction: str | None = None,
+    ) -> AgentRunResult:
+        if (existing_draft is None) != (revision_instruction is None):
+            raise ValueError("Existing itinerary and revision instruction must be supplied together.")
         deadline = time.monotonic() + settings.agent_run_timeout_seconds
 
         def ensure_time_remaining() -> None:
@@ -56,7 +64,11 @@ class TravelAgentLoop:
                     "Please try again."
                 )
 
-        ctx = ToolExecutionContext(request=request, max_repairs=self.max_repairs)
+        ctx = ToolExecutionContext(
+            request=request,
+            max_repairs=self.max_repairs,
+            revision_instruction=revision_instruction,
+        )
         declarations = build_tool_declarations()
         tool_config = types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
@@ -65,10 +77,17 @@ class TravelAgentLoop:
             temperature=0.3,
         )
 
+        initial_prompt = build_trip_prompt(request)
+        if existing_draft is not None and revision_instruction is not None:
+            initial_prompt += "\n\n" + build_revision_prompt(
+                request,
+                existing_draft.model_dump_json(indent=2),
+                revision_instruction,
+            )
         contents: list[types.Content] = [
             types.Content(
                 role="user",
-                parts=[types.Part.from_text(text=build_trip_prompt(request))],
+                parts=[types.Part.from_text(text=initial_prompt)],
             )
         ]
 
@@ -184,6 +203,11 @@ class TravelAgentLoop:
                 draft=ctx.last_draft,
                 model_used=last_model_used,
                 trace=trace,
+            )
+
+        if existing_draft is not None:
+            raise LLMGenerationError(
+                "The revision agent did not submit a revised itinerary. Please try the revision again."
             )
 
         # Safety net: fall back to a structured-output call if tool calling didn't yield a draft.

@@ -1,14 +1,14 @@
-import type { ItineraryResponse, TripRequest } from "../types/trip";
+import type { ItineraryDraft, ItineraryResponse, TripRequest } from "../types/trip";
 
-export async function planTrip(request: TripRequest): Promise<ItineraryResponse> {
+async function postTrip(path: string, payload: unknown): Promise<ItineraryResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 420_000);
 
   try {
-    const response = await fetch("/api/trips/plan", {
+    const response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 
@@ -34,4 +34,16 @@ export async function planTrip(request: TripRequest): Promise<ItineraryResponse>
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+export function planTrip(request: TripRequest): Promise<ItineraryResponse> {
+  return postTrip("/api/trips/plan", request);
+}
+
+export function reviseTrip(
+  trip_request: TripRequest,
+  itinerary: ItineraryDraft,
+  instruction: string,
+): Promise<ItineraryResponse> {
+  return postTrip("/api/trips/revise", { trip_request, itinerary, instruction });
 }

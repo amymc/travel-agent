@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, type SubmitEventHandler } from "react";
 import type { ActivityCategory, ItineraryResponse } from "../types/trip";
 import { AgentTracePanel } from "./AgentTracePanel";
 
 interface ItineraryViewProps {
   data: ItineraryResponse | null;
   maxBudget: number;
+  isLoading: boolean;
+  onRevise: (instruction: string) => void;
 }
 
 const CATEGORY_STYLES: Record<ActivityCategory, string> = {
@@ -15,8 +17,9 @@ const CATEGORY_STYLES: Record<ActivityCategory, string> = {
   free_time: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
-export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
+export function ItineraryView({ data, maxBudget, isLoading, onRevise }: ItineraryViewProps) {
   const [selectedDay, setSelectedDay] = useState<number | "all">("all");
+  const [revisionInstruction, setRevisionInstruction] = useState("");
 
   if (!data) {
     return (
@@ -48,6 +51,14 @@ export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
       ? itinerary.days
       : itinerary.days.filter((day) => day.day_number === selectedDay);
 
+  const handleRevision: SubmitEventHandler<HTMLFormElement> = (event) => {
+    event.preventDefault();
+    const instruction = revisionInstruction.trim();
+    if (!instruction || isLoading) return;
+    onRevise(instruction);
+    setRevisionInstruction("");
+  };
+
   return (
     <div className="space-y-5">
       {/* Header & Budget Card */}
@@ -69,7 +80,11 @@ export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
                 is_valid ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
               }`}
             >
-              {is_valid ? "Constraints Valid" : "Constraint Issues Found"}
+              {is_valid
+                ? issues.length > 0
+                  ? "Valid · review warnings"
+                  : "Constraints Valid"
+                : "Constraint Issues Found"}
             </span>
           </div>
         </div>
@@ -115,6 +130,38 @@ export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
           </div>
         )}
       </div>
+
+      <form
+        onSubmit={handleRevision}
+        className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm"
+      >
+        <label htmlFor="revision-instruction" className="block text-sm font-semibold text-slate-900">
+          Revise this itinerary
+        </label>
+        <p className="mt-1 text-xs text-slate-600">
+          Ask for a change and the agent will edit this plan while keeping the parts that still work.
+          For budget changes, include the trip currency ({itinerary.currency}).
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            id="revision-instruction"
+            value={revisionInstruction}
+            onChange={(event) => setRevisionInstruction(event.target.value)}
+            placeholder="Day 2 feels too rushed, or reduce the budget by 300 EUR"
+            minLength={3}
+            maxLength={2000}
+            required
+            className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
+          <button
+            type="submit"
+            disabled={isLoading || revisionInstruction.trim().length < 3}
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? "Revising..." : "Revise itinerary"}
+          </button>
+        </div>
+      </form>
 
       {/* Agent Execution Trace */}
       <AgentTracePanel trace={agent_trace} />
@@ -192,6 +239,16 @@ export function ItineraryView({ data, maxBudget }: ItineraryViewProps) {
                   {item.transit_note && (
                     <p className="mt-2 text-xs text-slate-500 italic">
                       Transit: {item.transit_note}
+                    </p>
+                  )}
+                  {item.opening_hours && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Listed hours: {item.opening_hours}
+                    </p>
+                  )}
+                  {item.travel_time_mins_from_previous != null && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Verified travel gap: {item.travel_time_mins_from_previous} min
                     </p>
                   )}
                 </div>

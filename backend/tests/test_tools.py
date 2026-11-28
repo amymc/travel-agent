@@ -281,6 +281,41 @@ def test_submit_itinerary_rejects_over_budget_for_repair_then_accepts() -> None:
     assert ctx.submitted_draft.days[0].items[0].estimated_cost == 22.0
 
 
+def test_submit_itinerary_never_accepts_errors_after_repair_limit() -> None:
+    ctx = ToolExecutionContext(
+        request=_sample_request(max_budget=40.0),
+        max_repairs=0,
+    )
+    draft = {
+        "destination": "Lisbon",
+        "title": "Over budget",
+        "summary": "Still over budget",
+        "currency": "EUR",
+        "days": [
+            {
+                "day_number": 1,
+                "theme": "Dinner",
+                "items": [
+                    {
+                        "start_time": "19:00",
+                        "end_time": "21:00",
+                        "title": "Expensive dinner",
+                        "category": "restaurant",
+                        "location": "Lisbon",
+                        "description": "Over budget",
+                        "estimated_cost": 60,
+                    }
+                ],
+            }
+        ],
+    }
+
+    result, summary = execute_tool_call("submit_itinerary", draft, ctx)
+    assert result["accepted"] is False
+    assert "repair limit" in summary.lower()
+    assert ctx.submitted_draft is None
+
+
 def test_execute_tool_call_handles_unknown_tool_and_bad_args() -> None:
     ctx = ToolExecutionContext(request=_sample_request())
 

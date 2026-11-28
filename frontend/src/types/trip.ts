@@ -14,6 +14,7 @@ export interface TripRequest {
   currency: string;
   pace: Pace;
   interests: string[];
+  start_date?: string | null;
 }
 
 export interface ItineraryItem {
@@ -25,6 +26,8 @@ export interface ItineraryItem {
   description: string;
   estimated_cost: number;
   transit_note?: string | null;
+  opening_hours?: string | null;
+  travel_time_mins_from_previous?: number | null;
 }
 
 export interface DayPlan {

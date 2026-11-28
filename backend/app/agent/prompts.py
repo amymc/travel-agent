@@ -18,6 +18,8 @@ Workflow:
    - Strict 24-hour HH:MM times, non-overlapping and sequential, leaving travel time between stops.
    - Keep total estimated_cost at or below max_budget (if tight, swap pricier restaurants/activities for free or budget options found via search_places).
    - Match the requested pace (relaxed: 3-4 stops/day, moderate: 4-6 stops/day, packed: 6-8 stops/day).
+   - Copy known opening_hours from search results and measured travel_time_mins_from_previous from route results into each applicable itinerary item. Use null when unavailable; never invent these values.
+   - Every restaurant stop must have the specific venue name as its title (for example, “Cervejaria Ramiro”), with the neighborhood only in location. Never use labels such as “Lunch in Alfama”, “Seafood dinner”, or “local restaurant” as the title. If search fails, use a specific venue only when you can identify one; say its details were not verified.
 4. Call submit_itinerary with your complete ItineraryDraft. If submit_itinerary reports validation errors (such as BUDGET_EXCEEDED or TIME_OVERLAP), fix the offending items and call submit_itinerary again.
 """
 
@@ -33,6 +35,25 @@ def build_trip_prompt(request: TripRequest) -> str:
         f"Budget ceiling: {request.max_budget:.2f} {request.currency} total\n"
         f"Preferred pace: {request.pace}\n"
         f"Interests: {interests_text}\n"
+        f"First travel date: {request.start_date.isoformat() if request.start_date else 'not specified'}\n"
         f"Use currency code '{request.currency}' for all cost estimates.\n\n"
         "Use your tools to research places and check travel times before calling submit_itinerary."
+    )
+
+
+def build_revision_prompt(
+    request: TripRequest,
+    existing_itinerary_json: str,
+    instruction: str,
+) -> str:
+    """Tell the agent to edit the supplied draft while retaining unaffected choices."""
+    return (
+        "REVISION REQUEST: Modify the existing itinerary below. Do not plan the trip from scratch. "
+        "Keep every day, stop, and detail that does not need to change to satisfy the request. "
+        "For 'too rushed', reduce the number of stops and add breathing room on the named day. "
+        "For budget changes, adjust costs and/or replace expensive stops while preserving the trip's character. "
+        "Use the normal research, deterministic validation, repair, and submission tools.\n\n"
+        f"User instruction: {instruction}\n"
+        f"Current budget ceiling: {request.max_budget:.2f} {request.currency}\n"
+        f"Current itinerary JSON:\n{existing_itinerary_json}"
     )

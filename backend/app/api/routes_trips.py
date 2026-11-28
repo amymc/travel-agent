@@ -1,7 +1,14 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.agent.loop import TravelAgentLoop
-from app.domain.models import ItineraryResponse, TripRequest
+from app.domain.models import (
+    ItineraryDraft,
+    ItineraryResponse,
+    ItineraryRevisionRequest,
+    TripRequest,
+)
 from app.domain.validator import validate_itinerary
 from app.services.llm_client import (
     GeminiItineraryClient,
@@ -12,6 +19,70 @@ from app.services.llm_client import (
 )
 
 router = APIRouter(prefix="/api/trips", tags=["trips"])
+
+_MONEY = r"(?P<amount>[$€£]?\s*\d[\d,]*(?:\.\d{1,2})?)\s*(?P<code>USD|EUR|GBP)?"
+
+
+def _apply_budget_instruction(request: TripRequest, instruction: str) -> TripRequest:
+    """Turn explicit budget cut/set language into a hard revised request ceiling."""
+    normalized = instruction.strip()
+    patterns = (
+        (
+            re.compile(
+                rf"\b(?:cut|reduce|lower|decrease)\s+(?:the\s+)?{_MONEY}"
+                r"\s+(?:from|off)\s+(?:the\s+)?budget\b",
+                re.I,
+            ),
+            "subtract",
+        ),
+        (
+            re.compile(
+                rf"\b(?:reduce|lower|decrease|cut)\s+(?:the\s+)?budget\s+by\s+{_MONEY}",
+                re.I,
+            ),
+            "subtract",
+        ),
+        (
+            re.compile(rf"\b(?:set|change|make)\s+(?:the\s+)?budget\s+to\s+{_MONEY}", re.I),
+            "set",
+        ),
+    )
+    for pattern, operation in patterns:
+        match = pattern.search(normalized)
+        if match is None:
+            continue
+        amount_text = (
+            match.group("amount")
+            .replace("$", "")
+            .replace("€", "")
+            .replace("£", "")
+            .replace(",", "")
+            .strip()
+        )
+        amount = float(amount_text)
+        code = match.group("code")
+        symbol = match.group("amount").strip()[:1]
+        symbol_currency = {"$": "USD", "€": "EUR", "£": "GBP"}.get(symbol)
+        target_currency = code or symbol_currency or request.currency
+        if target_currency != request.currency:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"The itinerary budget is in {request.currency}, but this revision uses "
+                    f"{target_currency}. Change the trip currency first; "
+                    "automatic conversion is unavailable."
+                ),
+            )
+        revised_budget = request.max_budget - amount if operation == "subtract" else amount
+        if revised_budget <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="The revised budget must remain greater than zero.",
+            )
+        return TripRequest(
+            **{**request.model_dump(), "max_budget": round(revised_budget, 2)}
+        )
+    return request
 
 
 def get_llm_client() -> GeminiItineraryClient:
@@ -30,8 +101,40 @@ def plan_trip(
     agent: TravelAgentLoop = Depends(get_agent_loop),
 ) -> ItineraryResponse:
     """Run the iterative travel agent loop and validate the resulting itinerary."""
+    return _run_plan(agent, request)
+
+
+@router.post("/revise", response_model=ItineraryResponse)
+def revise_trip(
+    revision: ItineraryRevisionRequest,
+    agent: TravelAgentLoop = Depends(get_agent_loop),
+) -> ItineraryResponse:
+    """Revise the supplied itinerary using its current state and a natural-language instruction."""
+    request = _apply_budget_instruction(revision.trip_request, revision.instruction)
+    return _run_plan(
+        agent,
+        request,
+        existing_draft=revision.itinerary,
+        revision_instruction=revision.instruction,
+    )
+
+
+def _run_plan(
+    agent: TravelAgentLoop,
+    request: TripRequest,
+    *,
+    existing_draft: ItineraryDraft | None = None,
+    revision_instruction: str | None = None,
+) -> ItineraryResponse:
     try:
-        result = agent.run(request)
+        if existing_draft is None:
+            result = agent.run(request)
+        else:
+            result = agent.run(
+                request,
+                existing_draft=existing_draft,
+                revision_instruction=revision_instruction,
+            )
     except (LLMConfigurationError, LLMUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -48,7 +151,9 @@ def plan_trip(
             detail=str(exc),
         ) from exc
 
-    total_cost, budget_remaining, issues = validate_itinerary(result.draft, request)
+    total_cost, budget_remaining, issues = validate_itinerary(
+        result.draft, request, revision_instruction
+    )
     has_errors = any(issue.severity == "error" for issue in issues)
 
     return ItineraryResponse(

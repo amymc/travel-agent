@@ -59,12 +59,29 @@ export function AgentTracePanel({ trace }: AgentTracePanelProps) {
                         </span>
                         <span className="text-slate-600">{call.result_summary}</span>
                       </div>
-                      {call.name !== "submit_itinerary" &&
-                        call.name !== "validate_draft_itinerary" && (
-                          <p className="mt-1 font-mono text-[11px] text-slate-500 break-all">
-                            args: {JSON.stringify(call.args)}
-                          </p>
-                        )}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer select-none text-[11px] font-medium text-indigo-700">
+                          Inspect arguments and full result
+                        </summary>
+                        <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                          <div>
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Arguments
+                            </p>
+                            <pre className="max-h-64 overflow-auto rounded-md bg-slate-900 p-2 text-[10px] text-slate-100">
+                              {JSON.stringify(call.args, null, 2)}
+                            </pre>
+                          </div>
+                          <div>
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Tool result
+                            </p>
+                            <pre className="max-h-64 overflow-auto rounded-md bg-slate-900 p-2 text-[10px] text-slate-100">
+                              {JSON.stringify(call.result_payload ?? {}, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      </details>
                     </li>
                   ))}
                 </ul>

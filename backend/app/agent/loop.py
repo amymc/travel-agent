@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 import time
+from collections.abc import Callable
+from typing import cast
 
 from google.genai import types
 
@@ -13,6 +15,7 @@ from app.domain.models import (
     AgentStepTrace,
     AgentToolCall,
     ItineraryDraft,
+    JsonValue,
     TripRequest,
 )
 from app.config import settings
@@ -52,6 +55,7 @@ class TravelAgentLoop:
         *,
         existing_draft: ItineraryDraft | None = None,
         revision_instruction: str | None = None,
+        event_callback: Callable[[dict[str, JsonValue]], None] | None = None,
     ) -> AgentRunResult:
         if (existing_draft is None) != (revision_instruction is None):
             raise ValueError("Existing itinerary and revision instruction must be supplied together.")
@@ -97,6 +101,15 @@ class TravelAgentLoop:
 
         for step in range(1, self.max_steps + 1):
             ensure_time_remaining()
+            if event_callback:
+                event_callback(
+                    {
+                        "type": "status",
+                        "status": "model_request",
+                        "message": f"Working on step {step}",
+                        "step": step,
+                    }
+                )
             response, model_used = self.llm_client.call_with_fallback(
                 contents=contents,
                 config=tool_config,
@@ -118,16 +131,38 @@ class TravelAgentLoop:
                     ensure_time_remaining()
                     call_name = call.name or ""
                     call_args = dict(call.args) if call.args else {}
+                    if event_callback:
+                        event_callback(
+                            {
+                                "type": "tool_call_started",
+                                "step": step,
+                                "name": call_name,
+                                "args": call_args,
+                            }
+                        )
                     tool_result, summary = execute_tool_call(call_name, call_args, ctx)
                     ensure_time_remaining()
+                    result_payload = cast(dict[str, JsonValue], tool_result)
 
                     step_calls.append(
                         AgentToolCall(
                             name=call_name,
                             args=call_args,
                             result_summary=summary,
+                            result_payload=result_payload,
                         )
                     )
+                    if event_callback:
+                        event_callback(
+                            {
+                                "type": "tool_call_completed",
+                                "step": step,
+                                "name": call_name,
+                                "args": call_args,
+                                "result_summary": summary,
+                                "result": result_payload,
+                            }
+                        )
                     response_parts.append(
                         types.Part.from_function_response(
                             name=call_name,
@@ -142,6 +177,19 @@ class TravelAgentLoop:
                         tool_calls=step_calls,
                     )
                 )
+                if event_callback:
+                    serialized_calls = [
+                        cast(dict[str, JsonValue], call.model_dump(mode="json"))
+                        for call in step_calls
+                    ]
+                    event_callback(
+                        {
+                            "type": "step_completed",
+                            "step": step,
+                            "model_used": model_used,
+                            "tool_calls": serialized_calls,
+                        }
+                    )
 
                 if ctx.submitted_draft is not None:
                     return AgentRunResult(
@@ -154,6 +202,16 @@ class TravelAgentLoop:
                 continue
 
             # Model responded without calling any tool.
+            if event_callback:
+                event_callback(
+                    {
+                        "type": "status",
+                        "status": "model_response",
+                        "message": f"Received response for step {step}",
+                        "step": step,
+                        "model_used": model_used,
+                    }
+                )
             if ctx.last_draft is not None:
                 trace.append(
                     AgentStepTrace(

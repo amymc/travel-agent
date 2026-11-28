@@ -7,7 +7,7 @@ from app.config import settings
 app = FastAPI(
     title="AI Travel Agent API",
     version="0.1.0",
-    description="Milestone 1: Structured itinerary generation + deterministic constraint validation.",
+    description="Streaming travel planning with persistent trip threads and deterministic itinerary validation.",
 )
 
 app.add_middleware(

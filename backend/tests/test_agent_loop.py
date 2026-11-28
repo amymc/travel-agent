@@ -220,9 +220,18 @@ def test_revision_loop_supplies_existing_itinerary_and_instruction() -> None:
         currency="EUR",
         pace="moderate",
     )
+    events: list[dict[str, JsonValue]] = []
     result = TravelAgentLoop(llm_client=RevisionLLMClient()).run(
         request,
         existing_draft=current,
         revision_instruction="Day 1 feels too rushed",
+        event_callback=events.append,
     )
     assert result.draft.title == "Slower plan"
+    assert [event["type"] for event in events] == [
+        "status",
+        "tool_call_started",
+        "tool_call_completed",
+        "step_completed",
+    ]
+    assert result.trace[0].tool_calls[0].result_payload is not None

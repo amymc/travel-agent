@@ -55,6 +55,7 @@ export interface AgentToolCall {
   name: string;
   args: Record<string, unknown>;
   result_summary: string;
+  result_payload?: Record<string, unknown> | null;
 }
 
 export interface AgentStepTrace {
@@ -72,4 +73,50 @@ export interface ItineraryResponse {
   issues: ValidationIssue[];
   model_used: string;
   agent_trace: AgentStepTrace[];
+  thread_id?: string | null;
+  trip_id?: string | null;
+  revision_number?: number | null;
+}
+
+export interface AgentStreamEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface TripThreadSummary {
+  thread_id: string;
+  title: string;
+  updated_at: string;
+  revision_number: number | null;
+  itinerary_title: string | null;
+}
+
+export interface TripThreadSnapshot {
+  trip_id: string;
+  revision_number: number;
+  request: TripRequest;
+  response: ItineraryResponse;
+  created_at: string;
+}
+
+export interface TripThreadMessage {
+  message_id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export interface TripThreadDetail {
+  thread_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: TripThreadMessage[];
+  snapshots: TripThreadSnapshot[];
+  events: Array<{
+    event_id: number;
+    event_type: string;
+    payload: AgentStreamEvent;
+    created_at: string;
+  }>;
 }

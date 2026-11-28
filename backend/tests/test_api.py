@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from app.agent.loop import AgentRunResult
@@ -12,6 +14,7 @@ from app.domain.models import (
 )
 from app.main import app
 from app.services.llm_client import LLMConfigurationError
+from app.config import settings
 
 
 class FakeAgentLoop:
@@ -209,5 +212,109 @@ def test_revision_endpoint_sends_existing_itinerary_and_applies_budget_cut() -> 
         assert body["itinerary"]["title"] == "Less expensive Lisbon plan"
         assert body["budget_remaining"] == 180
         assert body["is_valid"] is True
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_stream_plan_persists_thread_snapshot_and_agent_events(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(settings, "cache_db_path", str(tmp_path / "trips.sqlite3"))
+    draft = ItineraryDraft(
+        destination="Kyoto",
+        title="Kyoto Saved Trip",
+        summary="A saved itinerary summary.",
+        currency="EUR",
+        days=[
+            DayPlan(
+                day_number=1,
+                theme="Temples",
+                items=[
+                    ItineraryItem(
+                        start_time="09:00",
+                        end_time="10:00",
+                        title="Kiyomizu-dera",
+                        category="attraction",
+                        location="Higashiyama",
+                        description="Temple visit",
+                        estimated_cost=10,
+                        opening_hours="24/7",
+                    )
+                ],
+            )
+        ],
+    )
+
+    class StreamingAgent:
+        def run(
+            self,
+            request,
+            *,
+            existing_draft=None,
+            revision_instruction=None,
+            event_callback=None,
+        ):
+            assert event_callback is not None
+            if existing_draft is not None:
+                assert existing_draft == draft
+                assert revision_instruction == "Make the day more relaxed"
+                revised_draft = ItineraryDraft.model_validate(existing_draft.model_dump())
+                revised_draft.title = "Relaxed Kyoto Saved Trip"
+            else:
+                revised_draft = draft
+            event_callback({"type": "status", "message": "Mock planning step"})
+            return AgentRunResult(
+                draft=revised_draft,
+                model_used="test-model",
+                trace=[AgentStepTrace(step=1, model_used="test-model")],
+            )
+
+    app.dependency_overrides[get_agent_loop] = lambda: StreamingAgent()
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/trips/stream",
+            json={
+                "prompt": "One day in Kyoto",
+                "num_days": 1,
+                "max_budget": 100,
+                "currency": "EUR",
+            },
+        )
+        assert response.status_code == 200
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert [event["type"] for event in events] == [
+            "started",
+            "status",
+            "complete",
+        ]
+        thread_id = events[-1]["response"]["thread_id"]
+        summaries = client.get("/api/trips/threads").json()
+        assert len(summaries) == 1
+        assert summaries[0]["thread_id"] == thread_id
+
+        detail = client.get(f"/api/trips/threads/{thread_id}").json()
+        assert len(detail["messages"]) == 2
+        assert len(detail["snapshots"]) == 1
+        assert [event["event_type"] for event in detail["events"]] == [
+            "started",
+            "status",
+            "complete",
+        ]
+
+        revision_response = client.post(
+            f"/api/trips/threads/{thread_id}/revise/stream",
+            json={"instruction": "Make the day more relaxed"},
+        )
+        assert revision_response.status_code == 200
+        assert '"revision_number":2' in revision_response.text
+        revised_detail = client.get(f"/api/trips/threads/{thread_id}").json()
+        assert len(revised_detail["messages"]) == 4
+        assert len(revised_detail["snapshots"]) == 2
+        assert revised_detail["snapshots"][-1]["response"]["itinerary"]["title"] == (
+            "Relaxed Kyoto Saved Trip"
+        )
     finally:
         app.dependency_overrides.clear()

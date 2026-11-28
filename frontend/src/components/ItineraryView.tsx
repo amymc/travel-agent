@@ -1,4 +1,4 @@
-import { useState, type SubmitEventHandler } from "react";
+import { useEffect, useState, type SubmitEventHandler } from "react";
 import type { ActivityCategory, ItineraryResponse } from "../types/trip";
 import { AgentTracePanel } from "./AgentTracePanel";
 
@@ -17,9 +17,23 @@ const CATEGORY_STYLES: Record<ActivityCategory, string> = {
   free_time: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
+const CATEGORY_CHART_COLORS: Record<ActivityCategory, string> = {
+  attraction: "bg-indigo-500",
+  restaurant: "bg-amber-500",
+  transport: "bg-sky-500",
+  lodging: "bg-emerald-500",
+  free_time: "bg-slate-400",
+};
+
 export function ItineraryView({ data, maxBudget, isLoading, onRevise }: ItineraryViewProps) {
   const [selectedDay, setSelectedDay] = useState<number | "all">("all");
+  const [selectedCategory, setSelectedCategory] = useState<ActivityCategory | "all">("all");
   const [revisionInstruction, setRevisionInstruction] = useState("");
+
+  useEffect(() => {
+    setSelectedDay("all");
+    setSelectedCategory("all");
+  }, [data?.trip_id]);
 
   if (!data) {
     return (
@@ -50,6 +64,16 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
     selectedDay === "all"
       ? itinerary.days
       : itinerary.days.filter((day) => day.day_number === selectedDay);
+  const costByCategory = (Object.keys(CATEGORY_STYLES) as ActivityCategory[])
+    .map((category) => ({
+      category,
+      cost: itinerary.days
+        .flatMap((day) => day.items)
+        .filter((item) => item.category === category)
+        .reduce((sum, item) => sum + item.estimated_cost, 0),
+    }))
+    .filter((entry) => entry.cost > 0);
+  const largestCategoryCost = Math.max(1, ...costByCategory.map((entry) => entry.cost));
 
   const handleRevision: SubmitEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
@@ -131,6 +155,51 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
         )}
       </div>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Estimated cost breakdown</h3>
+            <p className="mt-0.5 text-xs text-slate-500">Select a category to filter the itinerary below.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory("all")}
+            aria-pressed={selectedCategory === "all"}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              selectedCategory === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
+            }`}
+          >
+            All categories
+          </button>
+        </div>
+        {costByCategory.length === 0 ? (
+          <p className="mt-4 text-xs text-slate-500">No estimated activity costs are recorded.</p>
+        ) : (
+          <div className="mt-4 space-y-2.5">
+            {costByCategory.map(({ category, cost }) => (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setSelectedCategory(category === selectedCategory ? "all" : category)}
+                aria-pressed={selectedCategory === category}
+                className="grid w-full grid-cols-[6rem_1fr_auto] items-center gap-3 rounded-lg px-2 py-1 text-left hover:bg-slate-50"
+              >
+                <span className="text-xs capitalize text-slate-700">{category.replace("_", " ")}</span>
+                <span className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <span
+                    className={`block h-full rounded-full ${CATEGORY_CHART_COLORS[category]}`}
+                    style={{ width: `${Math.max(2, (cost / largestCategoryCost) * 100)}%` }}
+                  />
+                </span>
+                <span className="text-xs font-semibold tabular-nums text-slate-800">
+                  {itinerary.currency} {cost.toFixed(2)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
       <form
         onSubmit={handleRevision}
         className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm"
@@ -209,7 +278,9 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
             </div>
 
             <div className="space-y-3">
-              {day.items.map((item, idx) => (
+              {day.items
+                .filter((item) => selectedCategory === "all" || item.category === selectedCategory)
+                .map((item, idx) => (
                 <div
                   key={`${day.day_number}-${item.start_time}-${idx}`}
                   className="rounded-xl border border-slate-100 bg-slate-50/60 p-4"
@@ -252,7 +323,12 @@ export function ItineraryView({ data, maxBudget, isLoading, onRevise }: Itinerar
                     </p>
                   )}
                 </div>
-              ))}
+                ))}
+              {day.items.every((item) => selectedCategory !== "all" && item.category !== selectedCategory) && (
+                <p className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                  No {selectedCategory.replace("_", " ")} stops on this day.
+                </p>
+              )}
             </div>
           </section>
         ))}

@@ -83,6 +83,7 @@ class AgentToolCall(BaseModel):
     name: str
     args: dict[str, JsonValue] = Field(default_factory=dict)
     result_summary: str
+    result_payload: dict[str, JsonValue] | None = None
 
 
 class AgentStepTrace(BaseModel):
@@ -104,6 +105,9 @@ class ItineraryResponse(BaseModel):
     issues: list[ValidationIssue]
     model_used: str
     agent_trace: list[AgentStepTrace] = Field(default_factory=list)
+    thread_id: str | None = None
+    trip_id: str | None = None
+    revision_number: int | None = None
 
 
 class ItineraryRevisionRequest(BaseModel):
@@ -111,4 +115,10 @@ class ItineraryRevisionRequest(BaseModel):
 
     trip_request: TripRequest
     itinerary: ItineraryDraft
+    instruction: str = Field(..., min_length=3, max_length=2000)
+
+
+class ItineraryRevisionInstruction(BaseModel):
+    """A follow-up instruction applied to the latest saved thread snapshot."""
+
     instruction: str = Field(..., min_length=3, max_length=2000)
